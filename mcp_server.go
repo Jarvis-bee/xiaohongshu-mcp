@@ -306,7 +306,23 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	// 工具 8: 获取用户主页
+	// 工具 8: 获取我的主页
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "my_profile",
+			Description: "获取当前登录账号的小红书主页，返回用户基本信息、关注/粉丝/获赞量及自己的笔记列表",
+			Annotations: &mcp.ToolAnnotations{
+				Title:        "My Profile",
+				ReadOnlyHint: true,
+			},
+		},
+		withPanicRecovery("my_profile", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleMyProfile(ctx)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 9: 获取用户主页
 	mcp.AddTool(server,
 		&mcp.Tool{
 			Name:        "user_profile",
@@ -326,7 +342,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	// 工具 9: 发表评论
+	// 工具 10: 发表评论
 	mcp.AddTool(server,
 		&mcp.Tool{
 			Name:        "post_comment_to_feed",
@@ -347,7 +363,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	// 工具 10: 回复评论
+	// 工具 11: 回复评论
 	mcp.AddTool(server,
 		&mcp.Tool{
 			Name: "reply_comment_in_feed",
