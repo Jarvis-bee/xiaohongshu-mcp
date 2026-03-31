@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/sirupsen/logrus"
-	"github.com/xpzouying/headless_browser"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
@@ -151,9 +150,11 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeRe
 			defer cancel()
 			defer deferFunc()
 
-			logrus.Info("WaitForLogin: starting goroutine"); if loginAction.WaitForLogin(ctxTimeout) {
+			logrus.Info("WaitForLogin: starting goroutine")
+			if loginAction.WaitForLogin(ctxTimeout) {
 				if er := saveCookies(page); er != nil {
-					logrus.Infof("WaitForLogin: SUCCESS, saving cookies"); logrus.Errorf("failed to save cookies: %v", er)
+					logrus.Infof("WaitForLogin: SUCCESS, saving cookies")
+					logrus.Errorf("failed to save cookies: %v", er)
 				}
 			}
 		}()
@@ -547,7 +548,7 @@ func (s *XiaohongshuService) ReplyCommentToFeed(ctx context.Context, feedID, xse
 	}, nil
 }
 
-func newBrowser() *headless_browser.Browser {
+func newBrowser() *browser.Browser {
 	return browser.NewBrowser(configs.IsHeadless(), browser.WithBinPath(configs.GetBinPath()))
 }
 
