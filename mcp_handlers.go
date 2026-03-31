@@ -76,6 +76,37 @@ func (s *AppServer) handleGetNotifications(ctx context.Context, args map[string]
 	}
 }
 
+// handleGetUnreadComments 处理获取未读评论请求
+func (s *AppServer) handleGetUnreadComments(ctx context.Context) *MCPToolResult {
+	logrus.Info("MCP: 获取未读评论")
+
+	result, err := s.xiaohongshuService.GetUnreadComments(ctx)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "获取未读评论失败: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "序列化未读评论失败: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	logrus.Infof(
+		"MCP: 获取未读评论成功 - mentions=%d, unread_count=%d, notifications=%d",
+		result.Counts.Mentions,
+		result.Counts.UnreadCount,
+		len(result.Notifications),
+	)
+	return &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: string(jsonBytes)}},
+	}
+}
+
 // MCP 工具处理函数
 
 // parseVisibility 从 MCP 参数中解析可见范围

@@ -100,6 +100,22 @@ type NotificationsResult struct {
 	NextCursor string `json:"next_cursor,omitempty"`
 }
 
+// NotificationCounts 首页未读通知计数
+type NotificationCounts struct {
+	UnreadCount int `json:"unread_count"`
+	Mentions    int `json:"mentions"`
+	Likes       int `json:"likes"`
+	Connections int `json:"connections"`
+}
+
+// UnreadCommentsResult 未读评论查询结果
+type UnreadCommentsResult struct {
+	Counts            NotificationCounts `json:"counts"`
+	HasUnreadComments bool               `json:"has_unread_comments"`
+	Notifications     []Notification     `json:"notifications"`
+	Consumed          bool               `json:"consumed"`
+}
+
 // mentionsAPIResponse 小红书 mentions API 的原始响应结构
 type mentionsAPIResponse struct {
 	Code    int    `json:"code"`
@@ -171,6 +187,90 @@ type NotificationsAction struct {
 // NewNotificationsAction 创建通知操作实例
 func NewNotificationsAction(page *rod.Page) *NotificationsAction {
 	return &NotificationsAction{page: page}
+}
+
+// GetUnreadComments 先读取首页未读计数，仅在 mentions > 0 时继续抓取评论通知。
+func (n *NotificationsAction) GetUnreadComments(ctx context.Context) (*UnreadCommentsResult, error) {
+	counts, err := n.GetUnreadCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &UnreadCommentsResult{
+		Counts:            *counts,
+		HasUnreadComments: counts.Mentions > 0,
+		Notifications:     []Notification{},
+		Consumed:          false,
+	}
+	if counts.Mentions <= 0 {
+		return result, nil
+	}
+
+	notifications, err := n.GetNotifications(ctx, "", 20)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Notifications = notifications.Notifications
+	result.Consumed = true
+	return result, nil
+}
+
+// GetUnreadCounts 获取首页未读通知计数。
+func (n *NotificationsAction) GetUnreadCounts(ctx context.Context) (*NotificationCounts, error) {
+	innerCtx, cancel := context.WithTimeout(ctx, notificationsTimeout)
+	defer cancel()
+
+	var bodies []string
+	var mu sync.Mutex
+
+	page := n.page.Context(innerCtx)
+	router := page.HijackRequests()
+	go router.Run()
+	defer router.Stop()
+
+	router.MustAdd("*/api/sns/web/unread_count*", func(ctx *rod.Hijack) {
+		ctx.MustLoadResponse()
+		body := ctx.Response.Body()
+		if body == "" {
+			return
+		}
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+	})
+
+	logrus.Info("未读评论：读取首页未读计数...")
+	page.MustNavigate("https://www.xiaohongshu.com/")
+	page.MustWaitDOMStable()
+
+	for i := 0; i < 8; i++ {
+		time.Sleep(1 * time.Second)
+		mu.Lock()
+		count := len(bodies)
+		mu.Unlock()
+		if count > 0 {
+			break
+		}
+		if i == 3 {
+			page.MustReload()
+			page.MustWaitDOMStable()
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) == 0 {
+		return nil, fmt.Errorf("无法获取首页未读计数")
+	}
+
+	for i := len(bodies) - 1; i >= 0; i-- {
+		counts, err := parseUnreadCountResponse(bodies[i])
+		if err == nil {
+			return counts, nil
+		}
+	}
+	return nil, fmt.Errorf("无法解析首页未读计数")
 }
 
 // GetNotifications 获取通知列表（单页，最多 20 条）
@@ -517,5 +617,36 @@ func parseNotificationsResponse(body string) (*NotificationsResult, error) {
 		Notifications: notifications,
 		HasMore:       apiResp.Data.HasMore,
 		NextCursor:    apiResp.Data.StrCursor,
+	}, nil
+}
+
+func parseUnreadCountResponse(body string) (*NotificationCounts, error) {
+	var apiResp struct {
+		Code    int    `json:"code"`
+		Success bool   `json:"success"`
+		Msg     string `json:"msg"`
+		Data    struct {
+			UnreadCount int `json:"unread_count"`
+			Mentions    int `json:"mentions"`
+			Likes       int `json:"likes"`
+			Connections int `json:"connections"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &apiResp); err != nil {
+		preview := body
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		return nil, fmt.Errorf("解析 unread_count 响应失败: %w\n原始响应: %s", err, preview)
+	}
+	if !apiResp.Success || apiResp.Code != 0 {
+		return nil, fmt.Errorf("unread_count API 返回错误: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return &NotificationCounts{
+		UnreadCount: apiResp.Data.UnreadCount,
+		Mentions:    apiResp.Data.Mentions,
+		Likes:       apiResp.Data.Likes,
+		Connections: apiResp.Data.Connections,
 	}, nil
 }

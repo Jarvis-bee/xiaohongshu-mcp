@@ -494,7 +494,23 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 14)
+	// 工具 15: 获取未读评论
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "get_unread_comments",
+			Description: "先读取首页未读计数，仅当 mentions 大于 0 时才抓取评论通知，返回当前未读评论列表与未读计数。",
+			Annotations: &mcp.ToolAnnotations{
+				Title:        "Get Unread Comments",
+				ReadOnlyHint: true,
+			},
+		},
+		withPanicRecovery("get_unread_comments", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleGetUnreadComments(ctx)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	logrus.Infof("Registered %d MCP tools", 15)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式

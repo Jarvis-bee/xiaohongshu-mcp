@@ -638,3 +638,19 @@ func (s *XiaohongshuService) GetNotificationsSince(ctx context.Context, sinceUni
 	action := xiaohongshu.NewNotificationsAction(page)
 	return action.GetNotificationsSince(ctx, sinceUnix)
 }
+
+// GetUnreadComments 获取未读评论。
+// 先读取首页未读计数，仅在 mentions > 0 时才进入通知页抓取评论通知。
+func (s *XiaohongshuService) GetUnreadComments(ctx context.Context) (*xiaohongshu.UnreadCommentsResult, error) {
+	notificationsMu.Lock()
+	defer notificationsMu.Unlock()
+
+	b := newBrowser()
+	defer b.Close()
+
+	page := b.NewPage()
+	defer page.Close()
+
+	action := xiaohongshu.NewNotificationsAction(page)
+	return action.GetUnreadComments(ctx)
+}
