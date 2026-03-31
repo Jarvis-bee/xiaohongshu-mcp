@@ -350,7 +350,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 	// 工具 10: 回复评论
 	mcp.AddTool(server,
 		&mcp.Tool{
-			Name:        "reply_comment_in_feed",
+			Name: "reply_comment_in_feed",
 			Description: "回复小红书笔记下的指定评论。\n" +
 				"支持回复一级评论和子评论：\n" +
 				"- 回复一级评论：仅需 comment_id 和 user_id。\n" +

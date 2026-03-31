@@ -151,9 +151,9 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeRe
 			defer cancel()
 			defer deferFunc()
 
-			if loginAction.WaitForLogin(ctxTimeout) {
+			logrus.Info("WaitForLogin: starting goroutine"); if loginAction.WaitForLogin(ctxTimeout) {
 				if er := saveCookies(page); er != nil {
-					logrus.Errorf("failed to save cookies: %v", er)
+					logrus.Infof("WaitForLogin: SUCCESS, saving cookies"); logrus.Errorf("failed to save cookies: %v", er)
 				}
 			}
 		}()
