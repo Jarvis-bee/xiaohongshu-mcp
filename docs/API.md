@@ -8,6 +8,18 @@
 
 **注意**: 以下响应示例仅展示主要字段结构，完整的字段信息请通过实际API调用查看。
 
+## 多账号参数
+
+除 `/health` 外，所有 HTTP API 都支持可选 `account` 参数：
+
+- GET/DELETE：通过 query 传入，例如 `?account=brand-a`
+- POST：优先读取 JSON body 中的 `account`，未传时回退 query
+- 未传 `account` 时使用 `default`
+- `account` 只支持字母、数字、`.`、`_`、`-`
+- Cookies 存储在 `COOKIES_DIR/<account>/cookies.json`，`COOKIES_DIR` 未设置时默认为 `~/.xiaohongshu-mcp/accounts`
+
+> 多账号版本不再读取旧的 `cookies.json` 或 `COOKIES_PATH`，需要按账号重新扫码登录。
+
 ## 通用响应格式
 
 所有 API 响应都使用统一的 JSON 格式：
@@ -68,7 +80,6 @@ GET /health
   "data": {
     "status": "healthy",
     "service": "xiaohongshu-mcp",
-    "account": "ai-report",
     "timestamp": "now"
   },
   "message": "服务正常"
@@ -85,7 +96,7 @@ GET /health
 
 **请求**
 ```
-GET /api/v1/login/status
+GET /api/v1/login/status?account=default
 ```
 
 **响应**
@@ -94,7 +105,8 @@ GET /api/v1/login/status
   "success": true,
   "data": {
     "is_logged_in": true,
-    "username": "用户名"
+    "username": "用户名",
+    "account": "default"
   },
   "message": "检查登录状态成功"
 }
@@ -106,7 +118,7 @@ GET /api/v1/login/status
 
 **请求**
 ```
-GET /api/v1/login/qrcode
+GET /api/v1/login/qrcode?account=brand-a
 ```
 
 **响应**
@@ -114,6 +126,7 @@ GET /api/v1/login/qrcode
 {
   "success": true,
   "data": {
+    "account": "brand-a",
     "timeout": "300",
     "is_logged_in": false,
     "img": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
@@ -133,7 +146,7 @@ GET /api/v1/login/qrcode
 
 **请求**
 ```
-DELETE /api/v1/login/cookies
+DELETE /api/v1/login/cookies?account=brand-a
 ```
 
 **响应**
@@ -141,7 +154,8 @@ DELETE /api/v1/login/cookies
 {
   "success": true,
   "data": {
-    "cookie_path": "/path/to/cookies.json",
+    "account": "brand-a",
+    "cookie_path": "/path/to/accounts/brand-a/cookies.json",
     "message": "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。"
   },
   "message": "删除 cookies 成功"
@@ -165,6 +179,7 @@ Content-Type: application/json
 **请求体**
 ```json
 {
+  "account": "brand-a",
   "title": "笔记标题",
   "content": "笔记内容",
   "images": [
@@ -801,6 +816,7 @@ Content-Type: application/json
 | 错误代码 | HTTP 状态码 | 描述 |
 |----------|-------------|------|
 | `INVALID_REQUEST` | 400 | 请求参数错误或格式不正确 |
+| `INVALID_ACCOUNT` | 400 | 账号别名格式不正确 |
 | `MISSING_KEYWORD` | 400 | 搜索时缺少关键词参数 |
 | `STATUS_CHECK_FAILED` | 500 | 检查登录状态失败 |
 | `DELETE_COOKIES_FAILED` | 500 | 删除 Cookies 失败 |
@@ -821,15 +837,17 @@ Content-Type: application/json
 
 1. **认证**: 部分 API 需要有效的登录状态，建议先调用登录状态检查接口确认登录。
 
-2. **安全令牌**: `xsec_token` 是小红书的安全令牌，在调用需要该参数的接口时必须提供。
+2. **多账号**: 不同 `account` 的登录态完全隔离；使用新账号前请先调用 `/api/v1/login/qrcode?account=账号别名` 扫码登录。
 
-3. **图片上传**: 发布接口中的 `images` 参数需要提供可访问的图片URL。
+3. **安全令牌**: `xsec_token` 是小红书的安全令牌，在调用需要该参数的接口时必须提供。
 
-4. **错误处理**: 所有接口在出错时都会返回统一格式的错误响应，请根据 `code` 字段进行相应的错误处理。
+4. **图片上传**: 发布接口中的 `images` 参数需要提供可访问的图片URL。
 
-5. **日志记录**: 所有API调用都会被记录到服务日志中，包括请求方法、路径和状态码。
+5. **错误处理**: 所有接口在出错时都会返回统一格式的错误响应，请根据 `code` 字段进行相应的错误处理。
 
-6. **跨域支持**: API 支持跨域请求 (CORS)。
+6. **日志记录**: 所有API调用都会被记录到服务日志中，包括请求方法、路径和状态码。
+
+7. **跨域支持**: API 支持跨域请求 (CORS)。
 
 ## MCP 协议支持
 

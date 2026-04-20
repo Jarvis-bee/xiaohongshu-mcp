@@ -28,6 +28,7 @@ func NewXiaohongshuService() *XiaohongshuService {
 
 // PublishRequest 发布请求
 type PublishRequest struct {
+	Account    string   `json:"account,omitempty"`
 	Title      string   `json:"title" binding:"required"`
 	Content    string   `json:"content" binding:"required"`
 	Images     []string `json:"images" binding:"required,min=1"`
@@ -42,10 +43,12 @@ type PublishRequest struct {
 type LoginStatusResponse struct {
 	IsLoggedIn bool   `json:"is_logged_in"`
 	Username   string `json:"username,omitempty"`
+	Account    string `json:"account"`
 }
 
 // LoginQrcodeResponse 登录扫码二维码
 type LoginQrcodeResponse struct {
+	Account    string `json:"account"`
 	Timeout    string `json:"timeout"`
 	IsLoggedIn bool   `json:"is_logged_in"`
 	Img        string `json:"img,omitempty"`
@@ -53,6 +56,7 @@ type LoginQrcodeResponse struct {
 
 // PublishResponse 发布响应
 type PublishResponse struct {
+	Account string `json:"account"`
 	Title   string `json:"title"`
 	Content string `json:"content"`
 	Images  int    `json:"images"`
@@ -62,6 +66,7 @@ type PublishResponse struct {
 
 // PublishVideoRequest 发布视频请求（仅支持本地单个视频文件）
 type PublishVideoRequest struct {
+	Account    string   `json:"account,omitempty"`
 	Title      string   `json:"title" binding:"required"`
 	Content    string   `json:"content" binding:"required"`
 	Video      string   `json:"video" binding:"required"`
@@ -73,6 +78,7 @@ type PublishVideoRequest struct {
 
 // PublishVideoResponse 发布视频响应
 type PublishVideoResponse struct {
+	Account string `json:"account"`
 	Title   string `json:"title"`
 	Content string `json:"content"`
 	Video   string `json:"video"`
@@ -93,16 +99,40 @@ type UserProfileResponse struct {
 	Feeds         []xiaohongshu.Feed             `json:"feeds"`
 }
 
-// DeleteCookies 删除 cookies 文件，用于登录重置
-func (s *XiaohongshuService) DeleteCookies(ctx context.Context) error {
-	cookiePath := cookies.GetCookiesFilePath()
+// DeleteCookiesResponse 删除 cookies 响应
+type DeleteCookiesResponse struct {
+	Account    string `json:"account"`
+	CookiePath string `json:"cookie_path"`
+	Message    string `json:"message"`
+}
+
+// DeleteCookies 删除指定账号的 cookies 文件，用于登录重置
+func (s *XiaohongshuService) DeleteCookies(ctx context.Context, account string) (*DeleteCookiesResponse, error) {
+	normalizedAccount, err := cookies.NormalizeAccount(account)
+	if err != nil {
+		return nil, err
+	}
+	cookiePath, err := cookies.GetCookiesFilePath(normalizedAccount)
+	if err != nil {
+		return nil, err
+	}
 	cookieLoader := cookies.NewLoadCookie(cookiePath)
-	return cookieLoader.DeleteCookies()
+	if err := cookieLoader.DeleteCookies(); err != nil {
+		return nil, err
+	}
+	return &DeleteCookiesResponse{
+		Account:    normalizedAccount,
+		CookiePath: cookiePath,
+		Message:    "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。",
+	}, nil
 }
 
 // CheckLoginStatus 检查登录状态
-func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context) (*LoginStatusResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context, account string) (*LoginStatusResponse, error) {
+	b, normalizedAccount, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -118,14 +148,18 @@ func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context) (*LoginStatus
 	response := &LoginStatusResponse{
 		IsLoggedIn: isLoggedIn,
 		Username:   configs.Username,
+		Account:    normalizedAccount,
 	}
 
 	return response, nil
 }
 
 // GetLoginQrcode 获取登录的扫码二维码
-func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context, account string) (*LoginQrcodeResponse, error) {
+	b, normalizedAccount, cookiePath, err := newBrowserWithCookiePath(account)
+	if err != nil {
+		return nil, err
+	}
 	page := b.NewPage()
 
 	deferFunc := func() {
@@ -153,15 +187,17 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeRe
 
 			logrus.Info("WaitForLogin: starting goroutine")
 			if loginAction.WaitForLogin(ctxTimeout) {
-				if er := saveCookies(page); er != nil {
-					logrus.Infof("WaitForLogin: SUCCESS, saving cookies")
+				if er := saveCookies(page, cookiePath); er != nil {
 					logrus.Errorf("failed to save cookies: %v", er)
+				} else {
+					logrus.Infof("WaitForLogin: SUCCESS, saved cookies for account=%s", normalizedAccount)
 				}
 			}
 		}()
 	}
 
 	return &LoginQrcodeResponse{
+		Account: normalizedAccount,
 		Timeout: func() string {
 			if loggedIn {
 				return "0s"
@@ -225,12 +261,18 @@ func (s *XiaohongshuService) PublishContent(ctx context.Context, req *PublishReq
 	}
 
 	// 执行发布
-	if err := s.publishContent(ctx, content); err != nil {
+	normalizedAccount, err := cookies.NormalizeAccount(req.Account)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.publishContent(ctx, normalizedAccount, content); err != nil {
 		logrus.Errorf("发布内容失败: title=%s %v", content.Title, err)
 		return nil, err
 	}
 
 	response := &PublishResponse{
+		Account: normalizedAccount,
 		Title:   req.Title,
 		Content: req.Content,
 		Images:  len(imagePaths),
@@ -247,8 +289,11 @@ func (s *XiaohongshuService) processImages(images []string) ([]string, error) {
 }
 
 // publishContent 执行内容发布
-func (s *XiaohongshuService) publishContent(ctx context.Context, content xiaohongshu.PublishImageContent) error {
-	b := newBrowser()
+func (s *XiaohongshuService) publishContent(ctx context.Context, account string, content xiaohongshu.PublishImageContent) error {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -315,12 +360,18 @@ func (s *XiaohongshuService) PublishVideo(ctx context.Context, req *PublishVideo
 		Products:     req.Products,
 	}
 
+	normalizedAccount, err := cookies.NormalizeAccount(req.Account)
+	if err != nil {
+		return nil, err
+	}
+
 	// 执行发布
-	if err := s.publishVideo(ctx, content); err != nil {
+	if err := s.publishVideo(ctx, normalizedAccount, content); err != nil {
 		return nil, err
 	}
 
 	resp := &PublishVideoResponse{
+		Account: normalizedAccount,
 		Title:   req.Title,
 		Content: req.Content,
 		Video:   req.Video,
@@ -330,8 +381,11 @@ func (s *XiaohongshuService) PublishVideo(ctx context.Context, req *PublishVideo
 }
 
 // publishVideo 执行视频发布
-func (s *XiaohongshuService) publishVideo(ctx context.Context, content xiaohongshu.PublishVideoContent) error {
-	b := newBrowser()
+func (s *XiaohongshuService) publishVideo(ctx context.Context, account string, content xiaohongshu.PublishVideoContent) error {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -346,8 +400,11 @@ func (s *XiaohongshuService) publishVideo(ctx context.Context, content xiaohongs
 }
 
 // ListFeeds 获取Feeds列表
-func (s *XiaohongshuService) ListFeeds(ctx context.Context) (*FeedsListResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) ListFeeds(ctx context.Context, account string) (*FeedsListResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -371,8 +428,11 @@ func (s *XiaohongshuService) ListFeeds(ctx context.Context) (*FeedsListResponse,
 	return response, nil
 }
 
-func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) SearchFeeds(ctx context.Context, account, keyword string, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -394,13 +454,16 @@ func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, fi
 }
 
 // GetFeedDetail 获取Feed详情
-func (s *XiaohongshuService) GetFeedDetail(ctx context.Context, feedID, xsecToken string, loadAllComments bool) (*FeedDetailResponse, error) {
-	return s.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, xiaohongshu.DefaultCommentLoadConfig())
+func (s *XiaohongshuService) GetFeedDetail(ctx context.Context, account, feedID, xsecToken string, loadAllComments bool) (*FeedDetailResponse, error) {
+	return s.GetFeedDetailWithConfig(ctx, account, feedID, xsecToken, loadAllComments, xiaohongshu.DefaultCommentLoadConfig())
 }
 
 // GetFeedDetailWithConfig 使用配置获取Feed详情
-func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config xiaohongshu.CommentLoadConfig) (*FeedDetailResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, account, feedID, xsecToken string, loadAllComments bool, config xiaohongshu.CommentLoadConfig) (*FeedDetailResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -424,8 +487,11 @@ func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID
 }
 
 // UserProfile 获取用户信息
-func (s *XiaohongshuService) UserProfile(ctx context.Context, userID, xsecToken string) (*UserProfileResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) UserProfile(ctx context.Context, account, userID, xsecToken string) (*UserProfileResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -448,8 +514,11 @@ func (s *XiaohongshuService) UserProfile(ctx context.Context, userID, xsecToken 
 }
 
 // PostCommentToFeed 发表评论到Feed
-func (s *XiaohongshuService) PostCommentToFeed(ctx context.Context, feedID, xsecToken, content string) (*PostCommentResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) PostCommentToFeed(ctx context.Context, account, feedID, xsecToken, content string) (*PostCommentResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -465,8 +534,11 @@ func (s *XiaohongshuService) PostCommentToFeed(ctx context.Context, feedID, xsec
 }
 
 // LikeFeed 点赞笔记
-func (s *XiaohongshuService) LikeFeed(ctx context.Context, feedID, xsecToken string) (*ActionResult, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) LikeFeed(ctx context.Context, account, feedID, xsecToken string) (*ActionResult, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -480,8 +552,11 @@ func (s *XiaohongshuService) LikeFeed(ctx context.Context, feedID, xsecToken str
 }
 
 // UnlikeFeed 取消点赞笔记
-func (s *XiaohongshuService) UnlikeFeed(ctx context.Context, feedID, xsecToken string) (*ActionResult, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) UnlikeFeed(ctx context.Context, account, feedID, xsecToken string) (*ActionResult, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -495,8 +570,11 @@ func (s *XiaohongshuService) UnlikeFeed(ctx context.Context, feedID, xsecToken s
 }
 
 // FavoriteFeed 收藏笔记
-func (s *XiaohongshuService) FavoriteFeed(ctx context.Context, feedID, xsecToken string) (*ActionResult, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) FavoriteFeed(ctx context.Context, account, feedID, xsecToken string) (*ActionResult, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -510,8 +588,11 @@ func (s *XiaohongshuService) FavoriteFeed(ctx context.Context, feedID, xsecToken
 }
 
 // UnfavoriteFeed 取消收藏笔记
-func (s *XiaohongshuService) UnfavoriteFeed(ctx context.Context, feedID, xsecToken string) (*ActionResult, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) UnfavoriteFeed(ctx context.Context, account, feedID, xsecToken string) (*ActionResult, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -527,8 +608,11 @@ func (s *XiaohongshuService) UnfavoriteFeed(ctx context.Context, feedID, xsecTok
 // ReplyCommentToFeed 回复指定评论
 // parentCommentID 为可选参数：当目标评论是子评论（comment/comment 类型）时，
 // 传入父评论 ID 可帮助浏览器先展开父评论再定位子评论，提高成功率。
-func (s *XiaohongshuService) ReplyCommentToFeed(ctx context.Context, feedID, xsecToken, commentID, userID, parentCommentID, content string) (*ReplyCommentResponse, error) {
-	b := newBrowser()
+func (s *XiaohongshuService) ReplyCommentToFeed(ctx context.Context, account, feedID, xsecToken, commentID, userID, parentCommentID, content string) (*ReplyCommentResponse, error) {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -549,11 +633,31 @@ func (s *XiaohongshuService) ReplyCommentToFeed(ctx context.Context, feedID, xse
 	}, nil
 }
 
-func newBrowser() *browser.Browser {
-	return browser.NewBrowser(configs.IsHeadless(), browser.WithBinPath(configs.GetBinPath()))
+func newBrowser(account string) (*browser.Browser, string, error) {
+	b, normalizedAccount, _, err := newBrowserWithCookiePath(account)
+	return b, normalizedAccount, err
 }
 
-func saveCookies(page *rod.Page) error {
+func newBrowserWithCookiePath(account string) (*browser.Browser, string, string, error) {
+	normalizedAccount, err := cookies.NormalizeAccount(account)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	cookiePath, err := cookies.GetCookiesFilePath(normalizedAccount)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	b := browser.NewBrowser(
+		configs.IsHeadless(),
+		browser.WithBinPath(configs.GetBinPath()),
+		browser.WithCookiesPath(cookiePath),
+	)
+	return b, normalizedAccount, cookiePath, nil
+}
+
+func saveCookies(page *rod.Page, cookiePath string) error {
 	cks, err := page.Browser().GetCookies()
 	if err != nil {
 		return err
@@ -564,13 +668,16 @@ func saveCookies(page *rod.Page) error {
 		return err
 	}
 
-	cookieLoader := cookies.NewLoadCookie(cookies.GetCookiesFilePath())
+	cookieLoader := cookies.NewLoadCookie(cookiePath)
 	return cookieLoader.SaveCookies(data)
 }
 
 // withBrowserPage 执行需要浏览器页面的操作的通用函数
-func withBrowserPage(fn func(*rod.Page) error) error {
-	b := newBrowser()
+func withBrowserPage(account string, fn func(*rod.Page) error) error {
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -580,11 +687,11 @@ func withBrowserPage(fn func(*rod.Page) error) error {
 }
 
 // GetMyProfile 获取当前登录用户的个人信息
-func (s *XiaohongshuService) GetMyProfile(ctx context.Context) (*UserProfileResponse, error) {
+func (s *XiaohongshuService) GetMyProfile(ctx context.Context, account string) (*UserProfileResponse, error) {
 	var result *xiaohongshu.UserProfileResponse
 	var err error
 
-	err = withBrowserPage(func(page *rod.Page) error {
+	err = withBrowserPage(account, func(page *rod.Page) error {
 		action := xiaohongshu.NewUserProfileAction(page)
 		result, err = action.GetMyProfileViaSidebar(ctx)
 		return err
@@ -609,11 +716,14 @@ var notificationsMu sync.Mutex
 // GetNotifications 获取通知列表（评论和回复）
 // cursor 为空时获取最新通知，非空时获取下一页（通过滚动触发）
 // limit 为每次获取的数量（最大 20，默认 20）
-func (s *XiaohongshuService) GetNotifications(ctx context.Context, cursor string, limit int) (*xiaohongshu.NotificationsResult, error) {
+func (s *XiaohongshuService) GetNotifications(ctx context.Context, account, cursor string, limit int) (*xiaohongshu.NotificationsResult, error) {
 	notificationsMu.Lock()
 	defer notificationsMu.Unlock()
 
-	b := newBrowser()
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -625,11 +735,14 @@ func (s *XiaohongshuService) GetNotifications(ctx context.Context, cursor string
 
 // GetNotificationsSince 获取指定时间之后的所有通知（自动翻页）
 // sinceUnix 为 Unix 时间戳（秒），0 表示获取所有
-func (s *XiaohongshuService) GetNotificationsSince(ctx context.Context, sinceUnix int64) (*xiaohongshu.NotificationsResult, error) {
+func (s *XiaohongshuService) GetNotificationsSince(ctx context.Context, account string, sinceUnix int64) (*xiaohongshu.NotificationsResult, error) {
 	notificationsMu.Lock()
 	defer notificationsMu.Unlock()
 
-	b := newBrowser()
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()
@@ -641,11 +754,14 @@ func (s *XiaohongshuService) GetNotificationsSince(ctx context.Context, sinceUni
 
 // GetUnreadComments 获取未读评论。
 // 先读取首页未读计数，仅在 mentions > 0 时才进入通知页抓取评论通知。
-func (s *XiaohongshuService) GetUnreadComments(ctx context.Context) (*xiaohongshu.UnreadCommentsResult, error) {
+func (s *XiaohongshuService) GetUnreadComments(ctx context.Context, account string) (*xiaohongshu.UnreadCommentsResult, error) {
 	notificationsMu.Lock()
 	defer notificationsMu.Unlock()
 
-	b := newBrowser()
+	b, _, err := newBrowser(account)
+	if err != nil {
+		return nil, err
+	}
 	defer b.Close()
 
 	page := b.NewPage()

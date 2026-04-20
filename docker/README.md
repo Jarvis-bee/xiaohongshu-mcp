@@ -109,7 +109,7 @@ docker run -e XHS_PROXY=http://user:pass@proxy:port xpzouying/xiaohongshu-mcp
 ```yaml
 environment:
   - ROD_BROWSER_BIN=/usr/bin/google-chrome
-  - COOKIES_PATH=/app/data/cookies.json
+  - COOKIES_DIR=/app/data/accounts
   - XHS_PROXY=http://user:pass@proxy:port
 ```
 
@@ -133,5 +133,4 @@ Using proxy: http://***:***@proxy:port
 扫码成功后，再次扫码后，就会提示已经完成登录了。
 
 <img width="2614" height="994" alt="image" src="https://github.com/user-attachments/assets/5356914a-3241-4bfd-b6b2-49c1cc5e3394" />
-
 

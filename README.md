@@ -440,19 +440,26 @@ Windows 遇到问题首先看这里：[Windows 安装指南](./docs/windows_guid
 
 ### 1.2. 登录
 
-第一次需要手动登录，需要保存小红书的登录状态。
+第一次需要手动登录，需要保存小红书的登录状态。多账号通过可选 `account` 区分，未传时使用 `default`；`account` 只支持字母、数字、`.`、`_`、`-`。
+
+Cookies 会保存到 `COOKIES_DIR/<account>/cookies.json`，未设置 `COOKIES_DIR` 时默认保存到 `~/.xiaohongshu-mcp/accounts`。多账号版本不再读取旧的 `cookies.json` 或 `COOKIES_PATH`，需要按账号重新扫码登录。
 
 **使用二进制文件**：
 
 ```bash
-# 运行对应平台的登录工具
+# 登录默认账号
 ./xiaohongshu-login-darwin-arm64
+
+# 登录指定账号别名
+./xiaohongshu-login-darwin-arm64 -account brand-a
 ```
 
 **使用源码**：
 
 ```bash
 go run cmd/login/main.go
+
+go run cmd/login/main.go -account brand-a
 ```
 
 ### 1.3. 启动 MCP 服务
@@ -847,9 +854,10 @@ npx mcporter list xiaohongshu-mcp
 
 连接成功后，可使用以下 MCP 工具：
 
-- `check_login_status` - 检查小红书登录状态（无参数）
-- `get_login_qrcode` - 获取登录二维码，返回 Base64 图片和超时时间（无参数）
-- `delete_cookies` - 删除 cookies 文件，重置登录状态，删除后需要重新登录（无参数）
+- 所有工具都支持可选 `account` 参数；未传时使用 `default`，不同账号的 cookies 完全隔离。
+- `check_login_status` - 检查小红书登录状态
+- `get_login_qrcode` - 获取登录二维码，返回 Base64 图片和超时时间
+- `delete_cookies` - 删除 cookies 文件，重置登录状态，删除后需要重新登录
 - `publish_content` - 发布图文内容到小红书（必需：title, content, images）
   - `images`: 图片路径列表（至少1张），支持 HTTP 链接或本地绝对路径，推荐使用本地路径
   - `tags`: 话题标签列表（可选），如 `["美食", "旅行", "生活"]`
@@ -863,7 +871,7 @@ npx mcporter list xiaohongshu-mcp
   - `schedule_at`: 定时发布时间（可选），ISO8601 格式，支持 1 小时至 14 天内
   - `visibility`: 可见范围（可选），支持 `公开可见`（默认）、`仅自己可见`、`仅互关好友可见`
   - `products`: 商品关键词列表（可选），用于绑定带货商品。填写商品名称或商品ID，系统会自动搜索并选择第一个匹配结果。需账号已开通商品功能。示例: [面膜, 防晒霜SPF50]
-- `list_feeds` - 获取小红书首页推荐列表（无参数）
+- `list_feeds` - 获取小红书首页推荐列表
 - `search_feeds` - 搜索小红书内容（必需：keyword）
   - `filters`: 筛选选项（可选）
     - `sort_by`: 排序依据 - `综合`（默认）| `最新` | `最多点赞` | `最多评论` | `最多收藏`
@@ -883,7 +891,7 @@ npx mcporter list xiaohongshu-mcp
   - `unlike`: 是否取消点赞（可选），true 为取消点赞，默认为点赞
 - `favorite_feed` - 收藏/取消收藏（必需：feed_id, xsec_token）
   - `unfavorite`: 是否取消收藏（可选），true 为取消收藏，默认为收藏
-- `my_profile` - 获取当前登录账号的个人主页信息（无参数）
+- `my_profile` - 获取当前登录账号的个人主页信息
 - `user_profile` - 获取指定用户个人主页信息（必需：user_id, xsec_token）
 
 ### 2.4. 使用示例

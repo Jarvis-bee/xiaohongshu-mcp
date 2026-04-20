@@ -423,19 +423,26 @@ For Windows issues, check here first: [Windows Installation Guide](./docs/window
 
 ### 1.2. Login
 
-First time requires manual login to save RedNote login status.
+First time requires manual login to save RedNote login status. Multi-account mode uses an optional `account` alias; empty means `default`. The alias only supports letters, numbers, `.`, `_`, and `-`.
+
+Cookies are stored under `COOKIES_DIR/<account>/cookies.json`; if `COOKIES_DIR` is not set, the default is `~/.xiaohongshu-mcp/accounts`. Multi-account versions no longer read the old `cookies.json` or `COOKIES_PATH`, so each account needs to scan the login QR code again.
 
 **Using Binary Files:**
 
 ```bash
-# Run the login tool for your platform
+# Login default account
 ./xiaohongshu-login-darwin-arm64
+
+# Login a named account
+./xiaohongshu-login-darwin-arm64 -account brand-a
 ```
 
 **Using Source Code:**
 
 ```bash
 go run cmd/login/main.go
+
+go run cmd/login/main.go -account brand-a
 ```
 
 ### 1.3. Start MCP Service
@@ -750,9 +757,10 @@ Basic configuration template:
 
 After successful connection, you can use the following MCP tools:
 
-- `check_login_status` - Check RedNote login status (no parameters)
-- `get_login_qrcode` - Get login QR code, returns Base64 image and timeout (no parameters)
-- `delete_cookies` - Delete cookies file, reset login status, requires re-login after deletion (no parameters)
+- All tools support optional `account`; empty means `default`, and cookies are isolated by account.
+- `check_login_status` - Check RedNote login status
+- `get_login_qrcode` - Get login QR code, returns Base64 image and timeout
+- `delete_cookies` - Delete cookies file, reset login status, requires re-login after deletion
 - `publish_content` - Publish image-text content to RedNote (required: title, content, images)
   - `images`: Image path list (minimum 1), supports HTTP links or local absolute paths, local paths recommended
   - `tags`: Topic tags list (optional), e.g. `["food", "travel", "lifestyle"]`
@@ -764,7 +772,7 @@ After successful connection, you can use the following MCP tools:
   - `tags`: Topic tags list (optional), e.g. `["food", "travel", "lifestyle"]`
   - `schedule_at`: Scheduled publish time (optional), ISO8601 format, supports 1 hour to 14 days ahead
   - `visibility`: Visibility scope (optional), supports `public` (default), `self-only`, `friends-only`
-- `list_feeds` - Get RedNote homepage recommendation list (no parameters)
+- `list_feeds` - Get RedNote homepage recommendation list
 - `search_feeds` - Search RedNote content (required: keyword)
   - `filters`: Filter options (optional)
     - `sort_by`: Sort by - `comprehensive` (default) | `latest` | `most liked` | `most comments` | `most saved`

@@ -37,7 +37,7 @@ func TestSearch(t *testing.T) {
 
 func TestSearchWithFilters(t *testing.T) {
 
-	//t.Skip("SKIP: 测试筛选功能")
+	t.Skip("SKIP: 需要已登录账号和浏览器环境")
 
 	b := browser.NewBrowser(false)
 	defer b.Close()

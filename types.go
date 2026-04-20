@@ -48,6 +48,7 @@ type CommentLoadConfig struct {
 
 // FeedDetailRequest Feed详情请求
 type FeedDetailRequest struct {
+	Account         string             `json:"account,omitempty"`
 	FeedID          string             `json:"feed_id" binding:"required"`
 	XsecToken       string             `json:"xsec_token" binding:"required"`
 	LoadAllComments bool               `json:"load_all_comments,omitempty"`
@@ -55,6 +56,7 @@ type FeedDetailRequest struct {
 }
 
 type SearchFeedsRequest struct {
+	Account string                   `json:"account,omitempty"`
 	Keyword string                   `json:"keyword" binding:"required"`
 	Filters xiaohongshu.FilterOption `json:"filters,omitempty"`
 }
@@ -67,6 +69,7 @@ type FeedDetailResponse struct {
 
 // PostCommentRequest 发表评论请求
 type PostCommentRequest struct {
+	Account   string `json:"account,omitempty"`
 	FeedID    string `json:"feed_id" binding:"required"`
 	XsecToken string `json:"xsec_token" binding:"required"`
 	Content   string `json:"content" binding:"required"`
@@ -81,6 +84,7 @@ type PostCommentResponse struct {
 
 // ReplyCommentRequest 回复评论请求
 type ReplyCommentRequest struct {
+	Account   string `json:"account,omitempty"`
 	FeedID    string `json:"feed_id" binding:"required"`
 	XsecToken string `json:"xsec_token" binding:"required"`
 	CommentID string `json:"comment_id" binding:"required_without=UserID"`
@@ -99,6 +103,7 @@ type ReplyCommentResponse struct {
 
 // UserProfileRequest 用户主页请求
 type UserProfileRequest struct {
+	Account   string `json:"account,omitempty"`
 	UserID    string `json:"user_id" binding:"required"`
 	XsecToken string `json:"xsec_token" binding:"required"`
 }

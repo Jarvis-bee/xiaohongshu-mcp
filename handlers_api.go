@@ -38,23 +38,49 @@ func respondSuccess(c *gin.Context, data any, message string) {
 	c.JSON(http.StatusOK, response)
 }
 
+// resolveRequestAccount 解析请求账号，POST JSON 优先，query 兜底。
+func resolveRequestAccount(c *gin.Context, bodyAccount string) (string, bool) {
+	account := bodyAccount
+	if account == "" {
+		account = c.Query("account")
+	}
+
+	normalizedAccount, err := cookies.NormalizeAccount(account)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "INVALID_ACCOUNT", "账号参数错误", err.Error())
+		return "", false
+	}
+
+	c.Set("account", normalizedAccount)
+	return normalizedAccount, true
+}
+
 // checkLoginStatusHandler 检查登录状态
 func (s *AppServer) checkLoginStatusHandler(c *gin.Context) {
-	status, err := s.xiaohongshuService.CheckLoginStatus(c.Request.Context())
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
+	status, err := s.xiaohongshuService.CheckLoginStatus(c.Request.Context(), account)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "STATUS_CHECK_FAILED",
 			"检查登录状态失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, status, "检查登录状态成功")
 }
 
 // getLoginQrcodeHandler 处理 [GET /api/login/qrcode] 请求。
 // 用于生成并返回登录二维码（Base64 图片 + 超时时间），供前端展示给用户扫码登录。
 func (s *AppServer) getLoginQrcodeHandler(c *gin.Context) {
-	result, err := s.xiaohongshuService.GetLoginQrcode(c.Request.Context())
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
+	result, err := s.xiaohongshuService.GetLoginQrcode(c.Request.Context(), account)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "STATUS_CHECK_FAILED",
 			"获取登录二维码失败", err.Error())
@@ -66,18 +92,19 @@ func (s *AppServer) getLoginQrcodeHandler(c *gin.Context) {
 
 // deleteCookiesHandler 删除 cookies，重置登录状态
 func (s *AppServer) deleteCookiesHandler(c *gin.Context) {
-	err := s.xiaohongshuService.DeleteCookies(c.Request.Context())
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
+	result, err := s.xiaohongshuService.DeleteCookies(c.Request.Context(), account)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "DELETE_COOKIES_FAILED",
 			"删除 cookies 失败", err.Error())
 		return
 	}
 
-	cookiePath := cookies.GetCookiesFilePath()
-	respondSuccess(c, map[string]interface{}{
-		"cookie_path": cookiePath,
-		"message":     "Cookies 已成功删除，登录状态已重置。下次操作时需要重新登录。",
-	}, "删除 cookies 成功")
+	respondSuccess(c, result, "删除 cookies 成功")
 }
 
 // publishHandler 发布内容
@@ -88,6 +115,11 @@ func (s *AppServer) publishHandler(c *gin.Context) {
 			"请求参数错误", err.Error())
 		return
 	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
+		return
+	}
+	req.Account = account
 
 	// 执行发布
 	result, err := s.xiaohongshuService.PublishContent(c.Request.Context(), &req)
@@ -108,6 +140,11 @@ func (s *AppServer) publishVideoHandler(c *gin.Context) {
 			"请求参数错误", err.Error())
 		return
 	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
+		return
+	}
+	req.Account = account
 
 	// 执行视频发布
 	result, err := s.xiaohongshuService.PublishVideo(c.Request.Context(), &req)
@@ -122,15 +159,19 @@ func (s *AppServer) publishVideoHandler(c *gin.Context) {
 
 // listFeedsHandler 获取Feeds列表
 func (s *AppServer) listFeedsHandler(c *gin.Context) {
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
 	// 获取 Feeds 列表
-	result, err := s.xiaohongshuService.ListFeeds(c.Request.Context())
+	result, err := s.xiaohongshuService.ListFeeds(c.Request.Context(), account)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "LIST_FEEDS_FAILED",
 			"获取Feeds列表失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, result, "获取Feeds列表成功")
 }
 
@@ -148,10 +189,20 @@ func (s *AppServer) searchFeedsHandler(c *gin.Context) {
 				"请求参数错误", err.Error())
 			return
 		}
+		account, ok := resolveRequestAccount(c, searchReq.Account)
+		if !ok {
+			return
+		}
 		keyword = searchReq.Keyword
 		filters = searchReq.Filters
+		_ = account
 	default:
+		account, ok := resolveRequestAccount(c, "")
+		if !ok {
+			return
+		}
 		keyword = c.Query("keyword")
+		_ = account
 	}
 
 	if keyword == "" {
@@ -160,15 +211,16 @@ func (s *AppServer) searchFeedsHandler(c *gin.Context) {
 		return
 	}
 
+	account := c.GetString("account")
+
 	// 搜索 Feeds
-	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), keyword, filters)
+	result, err := s.xiaohongshuService.SearchFeeds(c.Request.Context(), account, keyword, filters)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "SEARCH_FEEDS_FAILED",
 			"搜索Feeds失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, result, "搜索Feeds成功")
 }
 
@@ -178,6 +230,10 @@ func (s *AppServer) getFeedDetailHandler(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "INVALID_REQUEST",
 			"请求参数错误", err.Error())
+		return
+	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
 		return
 	}
 
@@ -192,10 +248,10 @@ func (s *AppServer) getFeedDetailHandler(c *gin.Context) {
 			MaxCommentItems:     req.CommentConfig.MaxCommentItems,
 			ScrollSpeed:         req.CommentConfig.ScrollSpeed,
 		}
-		result, err = s.xiaohongshuService.GetFeedDetailWithConfig(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments, config)
+		result, err = s.xiaohongshuService.GetFeedDetailWithConfig(c.Request.Context(), account, req.FeedID, req.XsecToken, req.LoadAllComments, config)
 	} else {
 		// 使用默认配置
-		result, err = s.xiaohongshuService.GetFeedDetail(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments)
+		result, err = s.xiaohongshuService.GetFeedDetail(c.Request.Context(), account, req.FeedID, req.XsecToken, req.LoadAllComments)
 	}
 
 	if err != nil {
@@ -204,7 +260,6 @@ func (s *AppServer) getFeedDetailHandler(c *gin.Context) {
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, result, "获取Feed详情成功")
 }
 
@@ -216,16 +271,19 @@ func (s *AppServer) userProfileHandler(c *gin.Context) {
 			"请求参数错误", err.Error())
 		return
 	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
+		return
+	}
 
 	// 获取用户信息
-	result, err := s.xiaohongshuService.UserProfile(c.Request.Context(), req.UserID, req.XsecToken)
+	result, err := s.xiaohongshuService.UserProfile(c.Request.Context(), account, req.UserID, req.XsecToken)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "GET_USER_PROFILE_FAILED",
 			"获取用户主页失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, map[string]any{"data": result}, "result.Message")
 }
 
@@ -237,16 +295,19 @@ func (s *AppServer) postCommentHandler(c *gin.Context) {
 			"请求参数错误", err.Error())
 		return
 	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
+		return
+	}
 
 	// 发表评论
-	result, err := s.xiaohongshuService.PostCommentToFeed(c.Request.Context(), req.FeedID, req.XsecToken, req.Content)
+	result, err := s.xiaohongshuService.PostCommentToFeed(c.Request.Context(), account, req.FeedID, req.XsecToken, req.Content)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "POST_COMMENT_FAILED",
 			"发表评论失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, result, result.Message)
 }
 
@@ -258,15 +319,18 @@ func (s *AppServer) replyCommentHandler(c *gin.Context) {
 			"请求参数错误", err.Error())
 		return
 	}
+	account, ok := resolveRequestAccount(c, req.Account)
+	if !ok {
+		return
+	}
 
-	result, err := s.xiaohongshuService.ReplyCommentToFeed(c.Request.Context(), req.FeedID, req.XsecToken, req.CommentID, req.UserID, "", req.Content)
+	result, err := s.xiaohongshuService.ReplyCommentToFeed(c.Request.Context(), account, req.FeedID, req.XsecToken, req.CommentID, req.UserID, "", req.Content)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "REPLY_COMMENT_FAILED",
 			"回复评论失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, result, result.Message)
 }
 
@@ -275,32 +339,40 @@ func healthHandler(c *gin.Context) {
 	respondSuccess(c, map[string]any{
 		"status":    "healthy",
 		"service":   "xiaohongshu-mcp",
-		"account":   "ai-report",
 		"timestamp": "now",
 	}, "服务正常")
 }
 
 // myProfileHandler 我的信息
 func (s *AppServer) myProfileHandler(c *gin.Context) {
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
 	// 获取当前登录用户信息
-	result, err := s.xiaohongshuService.GetMyProfile(c.Request.Context())
+	result, err := s.xiaohongshuService.GetMyProfile(c.Request.Context(), account)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "GET_MY_PROFILE_FAILED",
 			"获取我的主页失败", err.Error())
 		return
 	}
 
-	c.Set("account", "ai-report")
 	respondSuccess(c, map[string]any{"data": result}, "获取我的主页成功")
 }
 
 // getNotificationsHandler 获取通知（评论/被@/回复）
 // GET /api/v1/notifications?cursor=xxx
 func (s *AppServer) getNotificationsHandler(c *gin.Context) {
+	account, ok := resolveRequestAccount(c, "")
+	if !ok {
+		return
+	}
+
 	cursor := c.Query("cursor")
 	limit := 20
 
-	result, err := s.xiaohongshuService.GetNotifications(c.Request.Context(), cursor, limit)
+	result, err := s.xiaohongshuService.GetNotifications(c.Request.Context(), account, cursor, limit)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return

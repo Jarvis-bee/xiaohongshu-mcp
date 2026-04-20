@@ -37,7 +37,8 @@ type viewport struct {
 }
 
 type browserConfig struct {
-	binPath string
+	binPath     string
+	cookiesPath string
 }
 
 type Option func(*browserConfig)
@@ -155,6 +156,12 @@ func WithBinPath(binPath string) Option {
 	}
 }
 
+func WithCookiesPath(cookiesPath string) Option {
+	return func(c *browserConfig) {
+		c.cookiesPath = cookiesPath
+	}
+}
+
 // maskProxyCredentials masks username and password in proxy URL for safe logging.
 func maskProxyCredentials(proxyURL string) string {
 	u, err := url.Parse(proxyURL)
@@ -218,18 +225,27 @@ func NewBrowser(headless bool, options ...Option) *Browser {
 	controlURL := l.MustLaunch()
 	b := rod.New().ControlURL(controlURL).MustConnect()
 
-	cookiePath := cookies.GetCookiesFilePath()
-	cookieLoader := cookies.NewLoadCookie(cookiePath)
-	if data, err := cookieLoader.LoadCookies(); err == nil {
-		var cks []*proto.NetworkCookie
-		if err := json.Unmarshal(data, &cks); err != nil {
-			logrus.Warnf("failed to unmarshal cookies: %v", err)
-		} else if len(cks) > 0 {
-			b.MustSetCookies(cks...)
-			logrus.Debugf("loaded cookies from file successfully")
+	cookiePath := cfg.cookiesPath
+	if cookiePath == "" {
+		var err error
+		cookiePath, err = cookies.GetCookiesFilePath(cookies.DefaultAccount)
+		if err != nil {
+			logrus.Warnf("failed to resolve default cookies path: %v", err)
 		}
-	} else {
-		logrus.Warnf("failed to load cookies: %v", err)
+	}
+	if cookiePath != "" {
+		cookieLoader := cookies.NewLoadCookie(cookiePath)
+		if data, err := cookieLoader.LoadCookies(); err == nil {
+			var cks []*proto.NetworkCookie
+			if err := json.Unmarshal(data, &cks); err != nil {
+				logrus.Warnf("failed to unmarshal cookies: %v", err)
+			} else if len(cks) > 0 {
+				b.MustSetCookies(cks...)
+				logrus.Debugf("loaded cookies from file successfully: %s", cookiePath)
+			}
+		} else {
+			logrus.Warnf("failed to load cookies: %v", err)
+		}
 	}
 
 	logrus.Infof("browser fingerprint: ua=%s viewport=%dx%d", profile.UserAgent, profile.Viewport.Width, profile.Viewport.Height)

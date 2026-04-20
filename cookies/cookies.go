@@ -1,11 +1,21 @@
 package cookies
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/pkg/errors"
 )
+
+const (
+	DefaultAccount = "default"
+	CookiesFile    = "cookies.json"
+)
+
+var accountPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 type Cookier interface {
 	LoadCookies() ([]byte, error)
@@ -58,35 +68,46 @@ func (c *localCookie) DeleteCookies() error {
 	return os.Remove(c.path)
 }
 
-// GetCookiesFilePath 获取 cookies 文件路径。
-// 解析顺序（高到低）：
-// 1) COOKIES_PATH 环境变量（推荐）
-// 2) 旧路径 /tmp/cookies.json（兼容历史）
-// 3) 当前目录 cookies.json（兼容已有部署）
-// 4) 稳定默认路径 ~/.xiaohongshu-mcp/cookies.json（避免 cwd 漂移）
-func GetCookiesFilePath() string {
-	if p := os.Getenv("COOKIES_PATH"); p != "" {
+// NormalizeAccount 规范化账号别名。
+func NormalizeAccount(account string) (string, error) {
+	if account == "" {
+		return DefaultAccount, nil
+	}
+	if strings.TrimSpace(account) == "" {
+		return "", fmt.Errorf("账号别名不能为空白字符")
+	}
+	if account != strings.TrimSpace(account) {
+		return "", fmt.Errorf("账号别名不能包含首尾空格")
+	}
+	if account == "." || account == ".." {
+		return "", fmt.Errorf("账号别名不能为当前目录或父目录")
+	}
+	if !accountPattern.MatchString(account) {
+		return "", fmt.Errorf("账号别名只支持字母、数字、点、下划线和短横线")
+	}
+	return account, nil
+}
+
+// GetCookiesDir 获取多账号 cookies 根目录。
+func GetCookiesDir() string {
+	if p := os.Getenv("COOKIES_DIR"); p != "" {
 		return p
 	}
 
-	// 旧路径：/tmp/cookies.json
-	tmpDir := os.TempDir()
-	oldPath := filepath.Join(tmpDir, "cookies.json")
-	if _, err := os.Stat(oldPath); err == nil {
-		return oldPath
-	}
-
-	// 兼容历史：当前目录 cookies.json
-	if _, err := os.Stat("cookies.json"); err == nil {
-		return "cookies.json"
-	}
-
-	// 稳定默认路径：用户目录
 	home, err := os.UserHomeDir()
 	if err == nil && home != "" {
-		return filepath.Join(home, ".xiaohongshu-mcp", "cookies.json")
+		return filepath.Join(home, ".xiaohongshu-mcp", "accounts")
 	}
 
 	// 极端兜底
-	return "cookies.json"
+	return filepath.Join(".xiaohongshu-mcp", "accounts")
+}
+
+// GetCookiesFilePath 获取指定账号的 cookies 文件路径。
+func GetCookiesFilePath(account string) (string, error) {
+	normalizedAccount, err := NormalizeAccount(account)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(GetCookiesDir(), normalizedAccount, CookiesFile), nil
 }

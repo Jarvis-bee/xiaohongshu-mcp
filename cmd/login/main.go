@@ -15,12 +15,23 @@ import (
 func main() {
 	var (
 		binPath string // 浏览器二进制文件路径
+		account string // 账号别名
 	)
 	flag.StringVar(&binPath, "bin", "", "浏览器二进制文件路径")
+	flag.StringVar(&account, "account", "", "账号别名，留空使用 default")
 	flag.Parse()
 
+	normalizedAccount, err := cookies.NormalizeAccount(account)
+	if err != nil {
+		logrus.Fatalf("账号参数错误: %v", err)
+	}
+	cookiePath, err := cookies.GetCookiesFilePath(normalizedAccount)
+	if err != nil {
+		logrus.Fatalf("failed to resolve cookies path: %v", err)
+	}
+
 	// 登录的时候，需要界面，所以不能无头模式
-	b := browser.NewBrowser(false, browser.WithBinPath(binPath))
+	b := browser.NewBrowser(false, browser.WithBinPath(binPath), browser.WithCookiesPath(cookiePath))
 	defer b.Close()
 
 	page := b.NewPage()
@@ -33,7 +44,7 @@ func main() {
 		logrus.Fatalf("failed to check login status: %v", err)
 	}
 
-	logrus.Infof("当前登录状态: %v", status)
+	logrus.Infof("当前账号: %s, 登录状态: %v", normalizedAccount, status)
 
 	if status {
 		return
@@ -44,7 +55,7 @@ func main() {
 	if err = action.Login(context.Background()); err != nil {
 		logrus.Fatalf("登录失败: %v", err)
 	} else {
-		if err := saveCookies(page); err != nil {
+		if err := saveCookies(page, cookiePath); err != nil {
 			logrus.Fatalf("failed to save cookies: %v", err)
 		}
 	}
@@ -63,7 +74,7 @@ func main() {
 
 }
 
-func saveCookies(page *rod.Page) error {
+func saveCookies(page *rod.Page, cookiePath string) error {
 	cks, err := page.Browser().GetCookies()
 	if err != nil {
 		return err
@@ -74,6 +85,6 @@ func saveCookies(page *rod.Page) error {
 		return err
 	}
 
-	cookieLoader := cookies.NewLoadCookie(cookies.GetCookiesFilePath())
+	cookieLoader := cookies.NewLoadCookie(cookiePath)
 	return cookieLoader.SaveCookies(data)
 }

@@ -15,6 +15,11 @@ import (
 
 // handleGetNotifications 处理获取通知请求
 func (s *AppServer) handleGetNotifications(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+
 	cursor, _ := args["cursor"].(string)
 
 	limit := 20
@@ -48,11 +53,11 @@ func (s *AppServer) handleGetNotifications(ctx context.Context, args map[string]
 	)
 
 	if sinceTime > 0 {
-		logrus.Infof("MCP: 获取通知 - since_time=%d", sinceTime)
-		result, err = s.xiaohongshuService.GetNotificationsSince(ctx, sinceTime)
+		logrus.Infof("MCP: 获取通知 - account=%s, since_time=%d", account, sinceTime)
+		result, err = s.xiaohongshuService.GetNotificationsSince(ctx, account, sinceTime)
 	} else {
-		logrus.Infof("MCP: 获取通知 - cursor=%q, limit=%d", cursor, limit)
-		result, err = s.xiaohongshuService.GetNotifications(ctx, cursor, limit)
+		logrus.Infof("MCP: 获取通知 - account=%s, cursor=%q, limit=%d", account, cursor, limit)
+		result, err = s.xiaohongshuService.GetNotifications(ctx, account, cursor, limit)
 	}
 
 	if err != nil {
@@ -77,10 +82,14 @@ func (s *AppServer) handleGetNotifications(ctx context.Context, args map[string]
 }
 
 // handleGetUnreadComments 处理获取未读评论请求
-func (s *AppServer) handleGetUnreadComments(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 获取未读评论")
+func (s *AppServer) handleGetUnreadComments(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取未读评论 - account=%s", normalizedAccount)
 
-	result, err := s.xiaohongshuService.GetUnreadComments(ctx)
+	result, err := s.xiaohongshuService.GetUnreadComments(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{Type: "text", Text: "获取未读评论失败: " + err.Error()}},
@@ -121,11 +130,35 @@ func parseVisibility(args map[string]interface{}) string {
 	return ""
 }
 
-// handleCheckLoginStatus 处理检查登录状态
-func (s *AppServer) handleCheckLoginStatus(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 检查登录状态")
+func mcpAccountError(err error) *MCPToolResult {
+	return &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: "账号参数错误: " + err.Error()}},
+		IsError: true,
+	}
+}
 
-	status, err := s.xiaohongshuService.CheckLoginStatus(ctx)
+func parseMCPAccount(account string) (string, *MCPToolResult) {
+	normalizedAccount, err := cookies.NormalizeAccount(account)
+	if err != nil {
+		return "", mcpAccountError(err)
+	}
+	return normalizedAccount, nil
+}
+
+func parseMCPAccountFromMap(args map[string]interface{}) (string, *MCPToolResult) {
+	account, _ := args["account"].(string)
+	return parseMCPAccount(account)
+}
+
+// handleCheckLoginStatus 处理检查登录状态
+func (s *AppServer) handleCheckLoginStatus(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 检查登录状态 - account=%s", normalizedAccount)
+
+	status, err := s.xiaohongshuService.CheckLoginStatus(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -139,9 +172,9 @@ func (s *AppServer) handleCheckLoginStatus(ctx context.Context) *MCPToolResult {
 	// 根据 IsLoggedIn 判断并返回友好的提示
 	var resultText string
 	if status.IsLoggedIn {
-		resultText = fmt.Sprintf("✅ 已登录\n用户名: %s\n\n你可以使用其他功能了。", status.Username)
+		resultText = fmt.Sprintf("✅ 已登录\n账号: %s\n用户名: %s\n\n你可以使用其他功能了。", status.Account, status.Username)
 	} else {
-		resultText = fmt.Sprintf("❌ 未登录\n\n请使用 get_login_qrcode 工具获取二维码进行登录。")
+		resultText = fmt.Sprintf("❌ 未登录\n账号: %s\n\n请使用 get_login_qrcode 工具获取二维码进行登录。", status.Account)
 	}
 
 	return &MCPToolResult{
@@ -154,10 +187,14 @@ func (s *AppServer) handleCheckLoginStatus(ctx context.Context) *MCPToolResult {
 
 // handleGetLoginQrcode 处理获取登录二维码请求。
 // 返回二维码图片的 Base64 编码和超时时间，供前端展示扫码登录。
-func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 获取登录扫码图片")
+func (s *AppServer) handleGetLoginQrcode(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取登录扫码图片 - account=%s", normalizedAccount)
 
-	result, err := s.xiaohongshuService.GetLoginQrcode(ctx)
+	result, err := s.xiaohongshuService.GetLoginQrcode(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{Type: "text", Text: "获取登录扫码图片失败: " + err.Error()}},
@@ -167,7 +204,7 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 
 	if result.IsLoggedIn {
 		return &MCPToolResult{
-			Content: []MCPContent{{Type: "text", Text: "你当前已处于登录状态"}},
+			Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("账号 %s 当前已处于登录状态", result.Account)}},
 		}
 	}
 
@@ -182,7 +219,7 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 
 	// 已登录：文本 + 图片
 	contents := []MCPContent{
-		{Type: "text", Text: "请用小红书 App 在 " + deadline + " 前扫码登录 👇"},
+		{Type: "text", Text: fmt.Sprintf("请用小红书 App 在 %s 前扫码登录账号 %s 👇", deadline, result.Account)},
 		{
 			Type:     "image",
 			MimeType: "image/png",
@@ -193,10 +230,14 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 }
 
 // handleDeleteCookies 处理删除 cookies 请求，用于登录重置
-func (s *AppServer) handleDeleteCookies(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 删除 cookies，重置登录状态")
+func (s *AppServer) handleDeleteCookies(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 删除 cookies，重置登录状态 - account=%s", normalizedAccount)
 
-	err := s.xiaohongshuService.DeleteCookies(ctx)
+	result, err := s.xiaohongshuService.DeleteCookies(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{Type: "text", Text: "删除 cookies 失败: " + err.Error()}},
@@ -204,8 +245,7 @@ func (s *AppServer) handleDeleteCookies(ctx context.Context) *MCPToolResult {
 		}
 	}
 
-	cookiePath := cookies.GetCookiesFilePath()
-	resultText := fmt.Sprintf("Cookies 已成功删除，登录状态已重置。\n\n删除的文件路径: %s\n\n下次操作时，需要重新登录。", cookiePath)
+	resultText := fmt.Sprintf("账号 %s 的 Cookies 已成功删除，登录状态已重置。\n\n删除的文件路径: %s\n\n下次操作时，需要重新登录。", result.Account, result.CookiePath)
 	return &MCPToolResult{
 		Content: []MCPContent{{
 			Type: "text",
@@ -216,7 +256,11 @@ func (s *AppServer) handleDeleteCookies(ctx context.Context) *MCPToolResult {
 
 // handlePublishContent 处理发布内容
 func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]interface{}) *MCPToolResult {
-	logrus.Info("MCP: 发布内容")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 发布内容 - account=%s", account)
 
 	// 解析参数
 	title, _ := args["title"].(string)
@@ -257,6 +301,7 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 
 	// 构建发布请求
 	req := &PublishRequest{
+		Account:    account,
 		Title:      title,
 		Content:    content,
 		Images:     imagePaths,
@@ -290,7 +335,11 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 
 // handlePublishVideo 处理发布视频内容（仅本地单个视频文件）
 func (s *AppServer) handlePublishVideo(ctx context.Context, args map[string]interface{}) *MCPToolResult {
-	logrus.Info("MCP: 发布视频内容（本地）")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 发布视频内容（本地） - account=%s", account)
 
 	title, _ := args["title"].(string)
 	content, _ := args["content"].(string)
@@ -330,6 +379,7 @@ func (s *AppServer) handlePublishVideo(ctx context.Context, args map[string]inte
 
 	// 构建发布请求
 	req := &PublishVideoRequest{
+		Account:    account,
 		Title:      title,
 		Content:    content,
 		Video:      videoPath,
@@ -361,10 +411,14 @@ func (s *AppServer) handlePublishVideo(ctx context.Context, args map[string]inte
 }
 
 // handleListFeeds 处理获取Feeds列表
-func (s *AppServer) handleListFeeds(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 获取Feeds列表")
+func (s *AppServer) handleListFeeds(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取Feeds列表 - account=%s", normalizedAccount)
 
-	result, err := s.xiaohongshuService.ListFeeds(ctx)
+	result, err := s.xiaohongshuService.ListFeeds(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -397,7 +451,11 @@ func (s *AppServer) handleListFeeds(ctx context.Context) *MCPToolResult {
 
 // handleSearchFeeds 处理搜索Feeds
 func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs) *MCPToolResult {
-	logrus.Info("MCP: 搜索Feeds")
+	account, accountErr := parseMCPAccount(args.Account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 搜索Feeds - account=%s", account)
 
 	if args.Keyword == "" {
 		return &MCPToolResult{
@@ -420,7 +478,7 @@ func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs)
 		Location:    args.Filters.Location,
 	}
 
-	result, err := s.xiaohongshuService.SearchFeeds(ctx, args.Keyword, filter)
+	result, err := s.xiaohongshuService.SearchFeeds(ctx, account, args.Keyword, filter)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -453,7 +511,11 @@ func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs)
 
 // handleGetFeedDetail 处理获取Feed详情
 func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any) *MCPToolResult {
-	logrus.Info("MCP: 获取Feed详情")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取Feed详情 - account=%s", account)
 
 	// 解析参数
 	feedID, ok := args["feed_id"].(string)
@@ -538,7 +600,7 @@ func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any
 
 	logrus.Infof("MCP: 获取Feed详情 - Feed ID: %s, loadAllComments=%v, config=%+v", feedID, loadAll, config)
 
-	result, err := s.xiaohongshuService.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAll, config)
+	result, err := s.xiaohongshuService.GetFeedDetailWithConfig(ctx, account, feedID, xsecToken, loadAll, config)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -570,10 +632,14 @@ func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any
 }
 
 // handleMyProfile 获取当前登录用户主页
-func (s *AppServer) handleMyProfile(ctx context.Context) *MCPToolResult {
-	logrus.Info("MCP: 获取我的主页")
+func (s *AppServer) handleMyProfile(ctx context.Context, account string) *MCPToolResult {
+	normalizedAccount, accountErr := parseMCPAccount(account)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取我的主页 - account=%s", normalizedAccount)
 
-	result, err := s.xiaohongshuService.GetMyProfile(ctx)
+	result, err := s.xiaohongshuService.GetMyProfile(ctx, normalizedAccount)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -605,7 +671,11 @@ func (s *AppServer) handleMyProfile(ctx context.Context) *MCPToolResult {
 
 // handleUserProfile 获取用户主页
 func (s *AppServer) handleUserProfile(ctx context.Context, args map[string]any) *MCPToolResult {
-	logrus.Info("MCP: 获取用户主页")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 获取用户主页 - account=%s", account)
 
 	// 解析参数
 	userID, ok := args["user_id"].(string)
@@ -632,7 +702,7 @@ func (s *AppServer) handleUserProfile(ctx context.Context, args map[string]any) 
 
 	logrus.Infof("MCP: 获取用户主页 - User ID: %s", userID)
 
-	result, err := s.xiaohongshuService.UserProfile(ctx, userID, xsecToken)
+	result, err := s.xiaohongshuService.UserProfile(ctx, account, userID, xsecToken)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -665,6 +735,11 @@ func (s *AppServer) handleUserProfile(ctx context.Context, args map[string]any) 
 
 // handleLikeFeed 处理点赞/取消点赞
 func (s *AppServer) handleLikeFeed(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+
 	feedID, ok := args["feed_id"].(string)
 	if !ok || feedID == "" {
 		return &MCPToolResult{Content: []MCPContent{{Type: "text", Text: "操作失败: 缺少feed_id参数"}}, IsError: true}
@@ -679,9 +754,9 @@ func (s *AppServer) handleLikeFeed(ctx context.Context, args map[string]interfac
 	var err error
 
 	if unlike {
-		res, err = s.xiaohongshuService.UnlikeFeed(ctx, feedID, xsecToken)
+		res, err = s.xiaohongshuService.UnlikeFeed(ctx, account, feedID, xsecToken)
 	} else {
-		res, err = s.xiaohongshuService.LikeFeed(ctx, feedID, xsecToken)
+		res, err = s.xiaohongshuService.LikeFeed(ctx, account, feedID, xsecToken)
 	}
 
 	if err != nil {
@@ -701,6 +776,11 @@ func (s *AppServer) handleLikeFeed(ctx context.Context, args map[string]interfac
 
 // handleFavoriteFeed 处理收藏/取消收藏
 func (s *AppServer) handleFavoriteFeed(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+
 	feedID, ok := args["feed_id"].(string)
 	if !ok || feedID == "" {
 		return &MCPToolResult{Content: []MCPContent{{Type: "text", Text: "操作失败: 缺少feed_id参数"}}, IsError: true}
@@ -715,9 +795,9 @@ func (s *AppServer) handleFavoriteFeed(ctx context.Context, args map[string]inte
 	var err error
 
 	if unfavorite {
-		res, err = s.xiaohongshuService.UnfavoriteFeed(ctx, feedID, xsecToken)
+		res, err = s.xiaohongshuService.UnfavoriteFeed(ctx, account, feedID, xsecToken)
 	} else {
-		res, err = s.xiaohongshuService.FavoriteFeed(ctx, feedID, xsecToken)
+		res, err = s.xiaohongshuService.FavoriteFeed(ctx, account, feedID, xsecToken)
 	}
 
 	if err != nil {
@@ -737,7 +817,11 @@ func (s *AppServer) handleFavoriteFeed(ctx context.Context, args map[string]inte
 
 // handlePostComment 处理发表评论到Feed
 func (s *AppServer) handlePostComment(ctx context.Context, args map[string]interface{}) *MCPToolResult {
-	logrus.Info("MCP: 发表评论到Feed")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 发表评论到Feed - account=%s", account)
 
 	// 解析参数
 	feedID, ok := args["feed_id"].(string)
@@ -776,7 +860,7 @@ func (s *AppServer) handlePostComment(ctx context.Context, args map[string]inter
 	logrus.Infof("MCP: 发表评论 - Feed ID: %s, 内容长度: %d", feedID, len(content))
 
 	// 发表评论
-	result, err := s.xiaohongshuService.PostCommentToFeed(ctx, feedID, xsecToken, content)
+	result, err := s.xiaohongshuService.PostCommentToFeed(ctx, account, feedID, xsecToken, content)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -799,7 +883,11 @@ func (s *AppServer) handlePostComment(ctx context.Context, args map[string]inter
 
 // handleReplyComment 处理回复评论
 func (s *AppServer) handleReplyComment(ctx context.Context, args map[string]interface{}) *MCPToolResult {
-	logrus.Info("MCP: 回复评论")
+	account, accountErr := parseMCPAccountFromMap(args)
+	if accountErr != nil {
+		return accountErr
+	}
+	logrus.Infof("MCP: 回复评论 - account=%s", account)
 
 	// 解析参数
 	feedID, ok := args["feed_id"].(string)
@@ -852,7 +940,7 @@ func (s *AppServer) handleReplyComment(ctx context.Context, args map[string]inte
 	logrus.Infof("MCP: 回复评论 - Feed ID: %s, Comment ID: %s, User ID: %s, Parent Comment ID: %s, 内容长度: %d", feedID, commentID, userID, parentCommentID, len(content))
 
 	// 回复评论
-	result, err := s.xiaohongshuService.ReplyCommentToFeed(ctx, feedID, xsecToken, commentID, userID, parentCommentID, content)
+	result, err := s.xiaohongshuService.ReplyCommentToFeed(ctx, account, feedID, xsecToken, commentID, userID, parentCommentID, content)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{

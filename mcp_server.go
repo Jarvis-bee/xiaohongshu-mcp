@@ -15,8 +15,14 @@ func boolPtr(b bool) *bool { return &b }
 
 // MCP 工具参数结构体定义
 
+// AccountArgs 指定小红书账号别名，留空使用 default。
+type AccountArgs struct {
+	Account string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default。只支持字母、数字、点、下划线和短横线"`
+}
+
 // PublishContentArgs 发布内容的参数
 type PublishContentArgs struct {
+	Account    string   `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	Title      string   `json:"title" jsonschema:"内容标题（小红书限制：最多20个中文字或英文单词）"`
 	Content    string   `json:"content" jsonschema:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
 	Images     []string `json:"images" jsonschema:"图片路径列表（至少需要1张图片）。支持两种方式：1. HTTP/HTTPS图片链接（自动下载）；2. 本地图片绝对路径（推荐，如:/Users/user/image.jpg）"`
@@ -29,6 +35,7 @@ type PublishContentArgs struct {
 
 // PublishVideoArgs 发布视频的参数（仅支持本地单个视频文件）
 type PublishVideoArgs struct {
+	Account    string   `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	Title      string   `json:"title" jsonschema:"内容标题（小红书限制：最多20个中文字或英文单词）"`
 	Content    string   `json:"content" jsonschema:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
 	Video      string   `json:"video" jsonschema:"本地视频绝对路径（仅支持单个视频文件，如:/Users/user/video.mp4）"`
@@ -40,6 +47,7 @@ type PublishVideoArgs struct {
 
 // SearchFeedsArgs 搜索内容的参数
 type SearchFeedsArgs struct {
+	Account string       `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	Keyword string       `json:"keyword" jsonschema:"搜索关键词"`
 	Filters FilterOption `json:"filters,omitempty" jsonschema:"筛选选项"`
 }
@@ -55,6 +63,7 @@ type FilterOption struct {
 
 // FeedDetailArgs 获取Feed详情的参数
 type FeedDetailArgs struct {
+	Account          string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	FeedID           string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken        string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 	LoadAllComments  bool   `json:"load_all_comments,omitempty" jsonschema:"是否加载全部评论。false仅返回前10条一级评论（默认），true滚动加载更多评论"`
@@ -66,12 +75,14 @@ type FeedDetailArgs struct {
 
 // UserProfileArgs 获取用户主页的参数
 type UserProfileArgs struct {
+	Account   string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	UserID    string `json:"user_id" jsonschema:"小红书用户ID，从Feed列表获取"`
 	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 }
 
 // PostCommentArgs 发表评论的参数
 type PostCommentArgs struct {
+	Account   string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 	Content   string `json:"content" jsonschema:"评论内容"`
@@ -79,6 +90,7 @@ type PostCommentArgs struct {
 
 // ReplyCommentArgs 回复评论的参数
 type ReplyCommentArgs struct {
+	Account         string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	FeedID          string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken       string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 	CommentID       string `json:"comment_id,omitempty" jsonschema:"目标评论ID，从评论列表获取"`
@@ -89,6 +101,7 @@ type ReplyCommentArgs struct {
 
 // LikeFeedArgs 点赞参数
 type LikeFeedArgs struct {
+	Account   string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 	Unlike    bool   `json:"unlike,omitempty" jsonschema:"是否取消点赞，true为取消点赞，false或未设置则为点赞"`
@@ -96,6 +109,7 @@ type LikeFeedArgs struct {
 
 // FavoriteFeedArgs 收藏参数
 type FavoriteFeedArgs struct {
+	Account    string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	FeedID     string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken  string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
 	Unfavorite bool   `json:"unfavorite,omitempty" jsonschema:"是否取消收藏，true为取消收藏，false或未设置则为收藏"`
@@ -103,6 +117,7 @@ type FavoriteFeedArgs struct {
 
 // GetNotificationsArgs 获取通知的参数
 type GetNotificationsArgs struct {
+	Account   string `json:"account,omitempty" jsonschema:"账号别名（可选），留空使用default"`
 	Cursor    string `json:"cursor,omitempty" jsonschema:"分页游标，为空时获取最新通知，非空时获取下一页（从上次结果的 next_cursor 获取）"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"返回通知数量上限，默认20，最大20"`
 	SinceTime int64  `json:"since_time,omitempty" jsonschema:"只返回此 Unix 时间戳（秒）之后的通知，0 表示不过滤"`
@@ -171,8 +186,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("check_login_status", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleCheckLoginStatus(ctx)
+		withPanicRecovery("check_login_status", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleCheckLoginStatus(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -187,8 +202,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("get_login_qrcode", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleGetLoginQrcode(ctx)
+		withPanicRecovery("get_login_qrcode", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleGetLoginQrcode(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -203,8 +218,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				DestructiveHint: boolPtr(true),
 			},
 		},
-		withPanicRecovery("delete_cookies", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleDeleteCookies(ctx)
+		withPanicRecovery("delete_cookies", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleDeleteCookies(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -230,6 +245,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"is_original": args.IsOriginal,
 				"visibility":  args.Visibility,
 				"products":    convertStringsToInterfaces(args.Products),
+				"account":     args.Account,
 			}
 			result := appServer.handlePublishContent(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -246,8 +262,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("list_feeds", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleListFeeds(ctx)
+		withPanicRecovery("list_feeds", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleListFeeds(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -283,6 +299,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"feed_id":           args.FeedID,
 				"xsec_token":        args.XsecToken,
 				"load_all_comments": args.LoadAllComments,
+				"account":           args.Account,
 			}
 
 			// 只有当 load_all_comments=true 时，才处理其他参数
@@ -323,8 +340,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("my_profile", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleMyProfile(ctx)
+		withPanicRecovery("my_profile", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleMyProfile(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -343,6 +360,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			argsMap := map[string]interface{}{
 				"user_id":    args.UserID,
 				"xsec_token": args.XsecToken,
+				"account":    args.Account,
 			}
 			result := appServer.handleUserProfile(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -364,6 +382,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
 				"content":    args.Content,
+				"account":    args.Account,
 			}
 			result := appServer.handlePostComment(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -400,6 +419,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"user_id":           args.UserID,
 				"parent_comment_id": args.ParentCommentID,
 				"content":           args.Content,
+				"account":           args.Account,
 			}
 			result := appServer.handleReplyComment(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -425,6 +445,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"schedule_at": args.ScheduleAt,
 				"visibility":  args.Visibility,
 				"products":    convertStringsToInterfaces(args.Products),
+				"account":     args.Account,
 			}
 			result := appServer.handlePublishVideo(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -446,6 +467,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
 				"unlike":     args.Unlike,
+				"account":    args.Account,
 			}
 			result := appServer.handleLikeFeed(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -467,6 +489,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"feed_id":    args.FeedID,
 				"xsec_token": args.XsecToken,
 				"unfavorite": args.Unfavorite,
+				"account":    args.Account,
 			}
 			result := appServer.handleFavoriteFeed(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -479,7 +502,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			Name:        "get_notifications",
 			Description: "获取小红书通知列表（评论、回复等），支持分页和时间过滤。可用于轮询新评论，配合 reply_comment_in_feed 实现自动回复。",
 			Annotations: &mcp.ToolAnnotations{
-				Title:           "Get Notifications",
+				Title:        "Get Notifications",
 				ReadOnlyHint: true,
 			},
 		},
@@ -488,6 +511,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"cursor":     args.Cursor,
 				"limit":      args.Limit,
 				"since_time": args.SinceTime,
+				"account":    args.Account,
 			}
 			result := appServer.handleGetNotifications(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
@@ -504,8 +528,8 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				ReadOnlyHint: true,
 			},
 		},
-		withPanicRecovery("get_unread_comments", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleGetUnreadComments(ctx)
+		withPanicRecovery("get_unread_comments", func(ctx context.Context, req *mcp.CallToolRequest, args AccountArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleGetUnreadComments(ctx, args.Account)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
