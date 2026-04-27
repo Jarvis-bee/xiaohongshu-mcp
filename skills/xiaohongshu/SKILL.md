@@ -9,6 +9,17 @@ description: |
 
 ## 前置检查（每次执行必做）
 
+### 0. 多账号上下文
+
+当前 MCP 支持多账号。所有 xiaohongshu-mcp 工具都支持可选 `account` 参数：
+
+- 用户明确指定账号别名时，本次任务的所有 MCP 调用都必须带同一个 `account`。
+- 用户未指定账号时，不传 `account` 或传空，使用 `default`。
+- `account` 是 MCP 内部账号别名，不一定等于小红书昵称；只支持字母、数字、`.`、`_`、`-`。
+- 不要为了“切换账号”清除其它账号 cookies；优先通过传不同 `account` 使用隔离登录态。
+
+### 1. MCP 工具可用性
+
 所有小红书操作依赖 xiaohongshu-mcp 提供的 MCP 工具（如 `check_login_status`、`search_feeds` 等）。执行任何操作前，先确认这些工具是否可用：
 
 **判断方法**：检查当前可用的 MCP 工具列表中是否存在 `check_login_status`。
@@ -34,6 +45,7 @@ description: |
 ## 全局约束
 
 1. **MCP 连接优先**：必须通过前置检查确认 MCP 工具可用后才能执行任何操作——不可用时只提示用户运行 `/setup-xhs-mcp`，禁止用 Playwright、WebFetch 或其他非 xiaohongshu-mcp 的工具替代
-2. **登录优先**：MCP 连接就绪后，除安装部署外，操作前先用 `check_login_status` 确认登录状态——未登录的情况下调用其他工具会失败
+2. **登录优先**：MCP 连接就绪后，除安装部署外，操作前先用 `check_login_status` 携带目标 `account` 确认对应账号登录状态——未登录的情况下调用其他工具会失败
 3. **用户确认**：发布、评论等写操作执行前展示内容让用户确认——因为这些操作发出后无法撤回，代表用户的公开行为
 4. **参数来源**：`feed_id` 和 `xsec_token` 必须从搜索或浏览结果中获取，不可编造——编造的参数会导致 MCP 工具报错
+5. **账号一致性**：同一次任务中，`check_login_status`、搜索、详情、发布、互动、主页等调用必须使用同一个 `account`，避免用 A 账号查到的数据却用 B 账号操作

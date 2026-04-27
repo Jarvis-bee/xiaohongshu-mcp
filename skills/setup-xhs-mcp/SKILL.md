@@ -60,7 +60,7 @@ docker compose logs -f
 切换方法：编辑 docker-compose.yml，注释默认 image 行，取消注释阿里云 image 行。
 
 数据持久化：
-- `./data` — cookies 登录状态
+- `./data` — cookies 登录状态；多账号时会按账号别名隔离，例如 `accounts/<account>/cookies.json`
 - `./images` — 发布图片时的挂载目录
 
 #### 方式二：下载二进制
@@ -134,14 +134,22 @@ claude mcp add xiaohongshu --transport http <地址>
 ### 5. 验证与提示
 
 1. **提示用户重启当前会话** — MCP 配置变更后需重启客户端才能加载新的 MCP 工具
-2. 重启后调用 `check_login_status` 验证连接正常
-3. 验证成功 → 引导用户使用 `/xhs-login` 完成扫码登录
+2. 重启后调用 `check_login_status` 验证连接正常；如用户已有目标账号别名，要传 `account`，否则使用 `default`
+3. 验证成功 → 引导用户使用 `/xhs-login` 完成扫码登录，并说明多账号通过 `account` 参数区分
+
+## 多账号说明
+
+- MCP 工具统一支持可选 `account` 参数，未传时使用 `default`。
+- `account` 只支持字母、数字、`.`、`_`、`-`。
+- Cookies 按 `COOKIES_DIR/<account>/cookies.json` 隔离；未设置 `COOKIES_DIR` 时默认 `~/.xiaohongshu-mcp/accounts/<account>/cookies.json`。
+- Docker 部署时要确保 cookies 根目录有持久化挂载；发布图片路径仍需位于容器可见的 `/app/images` 等挂载目录。
 
 ## 环境变量（可选）
 
 - `XHS_PROXY` — HTTP/HTTPS/SOCKS5 代理地址
 - `ROD_BROWSER_BIN` — 自定义 Chromium 路径
 - `HEADLESS` — 无头模式开关
+- `COOKIES_DIR` — 多账号 cookies 根目录，目录下按 `<account>/cookies.json` 保存
 
 ## 失败处理
 

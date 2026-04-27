@@ -106,16 +106,85 @@ type DeleteCookiesResponse struct {
 	Message    string `json:"message"`
 }
 
+type pendingLoginSession struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+var (
+	pendingLoginMu       sync.Mutex
+	pendingLoginSessions = map[string]*pendingLoginSession{}
+	cookieFileMu         sync.Mutex
+)
+
+func beginPendingLoginSession(account string, timeout time.Duration) (context.Context, *pendingLoginSession) {
+	cancelPendingLoginSession(account)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	session := &pendingLoginSession{
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+
+	pendingLoginMu.Lock()
+	pendingLoginSessions[account] = session
+	pendingLoginMu.Unlock()
+
+	return ctx, session
+}
+
+func cancelPendingLoginSession(account string) {
+	pendingLoginMu.Lock()
+	session := pendingLoginSessions[account]
+	if session != nil {
+		delete(pendingLoginSessions, account)
+		session.cancel()
+	}
+	pendingLoginMu.Unlock()
+
+	if session != nil {
+		select {
+		case <-session.done:
+		case <-time.After(5 * time.Second):
+			logrus.Warnf("timed out waiting for pending login session to stop: account=%s", account)
+		}
+	}
+}
+
+func finishPendingLoginSession(account string, session *pendingLoginSession) {
+	session.cancel()
+
+	pendingLoginMu.Lock()
+	if pendingLoginSessions[account] == session {
+		delete(pendingLoginSessions, account)
+	}
+	pendingLoginMu.Unlock()
+
+	close(session.done)
+}
+
+func isPendingLoginSessionCurrent(account string, session *pendingLoginSession) bool {
+	pendingLoginMu.Lock()
+	defer pendingLoginMu.Unlock()
+	return pendingLoginSessions[account] == session
+}
+
 // DeleteCookies 删除指定账号的 cookies 文件，用于登录重置
 func (s *XiaohongshuService) DeleteCookies(ctx context.Context, account string) (*DeleteCookiesResponse, error) {
 	normalizedAccount, err := cookies.NormalizeAccount(account)
 	if err != nil {
 		return nil, err
 	}
+	cancelPendingLoginSession(normalizedAccount)
+
 	cookiePath, err := cookies.GetCookiesFilePath(normalizedAccount)
 	if err != nil {
 		return nil, err
 	}
+
+	cookieFileMu.Lock()
+	defer cookieFileMu.Unlock()
+
 	cookieLoader := cookies.NewLoadCookie(cookiePath)
 	if err := cookieLoader.DeleteCookies(); err != nil {
 		return nil, err
@@ -145,9 +214,20 @@ func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context, account strin
 		return nil, err
 	}
 
+	username := ""
+	if isLoggedIn {
+		profileAction := xiaohongshu.NewUserProfileAction(page)
+		profile, profileErr := profileAction.GetMyProfileViaSidebar(ctx)
+		if profileErr != nil {
+			logrus.Warnf("failed to read logged-in username for account=%s: %v", normalizedAccount, profileErr)
+		} else {
+			username = profile.UserBasicInfo.Nickname
+		}
+	}
+
 	response := &LoginStatusResponse{
 		IsLoggedIn: isLoggedIn,
-		Username:   configs.Username,
+		Username:   username,
 		Account:    normalizedAccount,
 	}
 
@@ -160,6 +240,8 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context, account string)
 	if err != nil {
 		return nil, err
 	}
+	cancelPendingLoginSession(normalizedAccount)
+
 	page := b.NewPage()
 
 	deferFunc := func() {
@@ -180,13 +262,24 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context, account string)
 	timeout := 4 * time.Minute
 
 	if !loggedIn {
+		ctxTimeout, session := beginPendingLoginSession(normalizedAccount, timeout)
 		go func() {
-			ctxTimeout, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
+			defer finishPendingLoginSession(normalizedAccount, session)
 			defer deferFunc()
 
 			logrus.Info("WaitForLogin: starting goroutine")
 			if loginAction.WaitForLogin(ctxTimeout) {
+				if !isPendingLoginSessionCurrent(normalizedAccount, session) {
+					logrus.Infof("WaitForLogin: skip saving cookies for stale login session account=%s", normalizedAccount)
+					return
+				}
+
+				cookieFileMu.Lock()
+				defer cookieFileMu.Unlock()
+				if !isPendingLoginSessionCurrent(normalizedAccount, session) {
+					logrus.Infof("WaitForLogin: skip saving cookies for stale login session account=%s", normalizedAccount)
+					return
+				}
 				if er := saveCookies(page, cookiePath); er != nil {
 					logrus.Errorf("failed to save cookies: %v", er)
 				} else {

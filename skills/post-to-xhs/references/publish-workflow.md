@@ -6,7 +6,7 @@
 
 1. **Chrome 浏览器已安装** - 标准 Google Chrome
 2. **Python 依赖已安装** - `websockets`、`requests`
-3. **首次登录已完成** - 至少登录过一次小红书（cookie 持久化在专用 profile 中）
+3. **首次登录已完成** - 至少登录过一次目标账号（cookie 按账号持久化在专用 profile 中）
 
 ## 流程概览
 
@@ -29,15 +29,15 @@
 - 检测 `127.0.0.1:9222` 端口是否已有 Chrome 实例
 - 若无，启动 Chrome 并附带以下参数:
   - `--remote-debugging-port=9222`
-  - `--user-data-dir=%LOCALAPPDATA%/Google/Chrome/XiaohongshuProfile`
+  - `--user-data-dir=%LOCALAPPDATA%/Google/Chrome/XiaohongshuProfiles/<account>`（未指定账号时为 default）
   - `--no-first-run`
   - `--no-default-browser-check`
   - `--headless=new`（仅在无头模式下）
 - 等待端口就绪（最多 15 秒）
 
-**用户数据目录说明**: 使用独立的 `XiaohongshuProfile` 目录，与用户日常浏览器 profile 完全隔离，不会干扰正常使用。
+**用户数据目录说明**: 使用独立的 `XiaohongshuProfiles/<account>` 目录，与用户日常浏览器 profile 完全隔离；不同账号的登录态彼此隔离。
 
-**无头模式说明**: 使用 `--headless` 参数启动时，Chrome 不会显示窗口，适合自动化发布。如需登录或切换账号，脚本会自动切换到有窗口模式。
+**无头模式说明**: 使用 `--headless` 参数启动时，Chrome 不会显示窗口，适合自动化发布。如目标 `account` 未登录或需要切换账号，脚本会自动切换到有窗口模式。
 
 ### 2. 检查登录状态
 
@@ -46,7 +46,7 @@
 - 导航到 `https://creator.xiaohongshu.com`
 - 检查当前 URL 是否包含 "login"（被重定向到登录页）
 - 检查页面是否存在用户信息相关的 DOM 元素
-- 若未登录，提示用户在 Chrome 窗口中扫码登录
+- 若目标账号未登录，提示用户在 Chrome 窗口中扫码登录
 
 ### 3. 导航到发布页
 
@@ -177,32 +177,32 @@
 |---|---|---|
 | Chrome 未启动 | 端口 9222 无响应 | 运行 `chrome_launcher.py` 或手动启动 Chrome |
 | 找不到 Chrome | 非标准安装路径 | 检查 Chrome 安装，或在脚本中指定路径 |
-| 未登录 | cookie 过期或首次使用 | 在 Chrome 窗口中扫码登录 |
+| 未登录 | 目标 account 的 cookie 过期或首次使用 | 使用同一 `--account` 在 Chrome 窗口中扫码登录 |
 | 选择器失效 | 小红书页面更新 | 按上述维护指南更新选择器 |
 | 图片上传失败 | 文件路径错误或格式不支持 | 检查图片路径，确保格式为 jpg/png/webp |
 | 发布按钮找不到 | 页面未完全加载 | 增加等待时间或手动点击发布 |
 
 ## CLI 用法
 
-所有脚本位于 `scripts/` 目录。
+所有脚本位于 `scripts/` 目录。多账号统一通过 `--account <name>` 指定；未传时使用默认账号。
 
 ### 方式 A: 统一 pipeline（推荐）
 
 ```bash
-# 无头模式（推荐）- 无浏览器窗口，更快
-python publish_pipeline.py --headless --title "标题" --content "正文" --image-urls URL1 URL2
+# 无头模式（推荐）- 无浏览器窗口，更快；指定账号 brand-a
+python publish_pipeline.py --account brand-a --headless --title "标题" --content "正文" --image-urls URL1 URL2
 
 # 无头模式 - 从文件读取标题和正文
-python publish_pipeline.py --headless --title-file title.txt --content-file body.txt --image-urls URL1
+python publish_pipeline.py --account brand-a --headless --title-file title.txt --content-file body.txt --image-urls URL1
 
 # 有窗口模式 - 用于调试或首次登录
-python publish_pipeline.py --title "标题" --content "正文" --image-urls URL1 URL2
+python publish_pipeline.py --account brand-a --title "标题" --content "正文" --image-urls URL1 URL2
 
 # 使用本地图片文件
-python publish_pipeline.py --headless --title "标题" --content "正文" --images img1.jpg img2.jpg
+python publish_pipeline.py --account brand-a --headless --title "标题" --content "正文" --images img1.jpg img2.jpg
 
 # 填写并自动发布
-python publish_pipeline.py --headless --title "标题" --content "正文" --image-urls URL1 --auto-publish
+python publish_pipeline.py --account brand-a --headless --title "标题" --content "正文" --image-urls URL1 --auto-publish
 ```
 
 输出状态码:
@@ -215,69 +215,78 @@ python publish_pipeline.py --headless --title "标题" --content "正文" --imag
 
 ```bash
 # 1. 启动 Chrome（可选 --headless）
-python chrome_launcher.py
-python chrome_launcher.py --headless
+python chrome_launcher.py --account brand-a
+python chrome_launcher.py --account brand-a --headless
 
 # 2. 检查登录（退出码 0=已登录, 1=未登录）
-python cdp_publish.py check-login
-python cdp_publish.py --headless check-login
+python cdp_publish.py --account brand-a check-login
+python cdp_publish.py --account brand-a --headless check-login
 
 # 3. 填写表单
-python cdp_publish.py fill --title "标题" --content-file body.txt --images img1.jpg
-python cdp_publish.py --headless fill --title "标题" --content-file body.txt --images img1.jpg
+python cdp_publish.py --account brand-a fill --title "标题" --content-file body.txt --images img1.jpg
+python cdp_publish.py --account brand-a --headless fill --title "标题" --content-file body.txt --images img1.jpg
 
 # 4. 用户确认后点击发布
-python cdp_publish.py click-publish
+python cdp_publish.py --account brand-a click-publish
 
 # 或一步完成填写+发布
-python cdp_publish.py --headless publish --title "标题" --content-file body.txt --images img1.jpg
+python cdp_publish.py --account brand-a --headless publish --title "标题" --content-file body.txt --images img1.jpg
 ```
 
 ### 方式 C: 分步调用（长文模式）
 
 ```bash
 # 1. 启动 Chrome
-python chrome_launcher.py
+python chrome_launcher.py --account brand-a
 
 # 2. 检查登录
-python cdp_publish.py check-login
+python cdp_publish.py --account brand-a check-login
 
 # 3. 填写长文 + 一键排版（输出包含 TEMPLATES JSON）
-python cdp_publish.py long-article --title-file title.txt --content-file content.txt
+python cdp_publish.py --account brand-a long-article --title-file title.txt --content-file content.txt
 
 # 4. 选择模板
-python cdp_publish.py select-template --name "模板名称"
+python cdp_publish.py --account brand-a select-template --name "模板名称"
 
 # 5. 下一步 + 填写发布页正文描述
-python cdp_publish.py click-next-step --content-file content.txt
+python cdp_publish.py --account brand-a click-next-step --content-file content.txt
 
 # 6. 用户确认后点击发布
-python cdp_publish.py click-publish
+python cdp_publish.py --account brand-a click-publish
 ```
 
 ### 方式 D: Pipeline 长文模式
 
 ```bash
 # 长文模式（图片可选）
-python publish_pipeline.py --mode long-article --title-file title.txt --content-file content.txt
-python publish_pipeline.py --mode long-article --title "标题" --content "正文" --images img1.jpg
+python publish_pipeline.py --account brand-a --mode long-article --title-file title.txt --content-file content.txt
+python publish_pipeline.py --account brand-a --mode long-article --title "标题" --content "正文" --images img1.jpg
 ```
 
 ### 账号管理
 
 ```bash
-# 首次登录或 session 过期 - 打开浏览器扫码登录
-python cdp_publish.py login
+# 查看账号配置
+python cdp_publish.py list-accounts
 
-# 切换账号 - 清除 cookie 并打开登录页
-python cdp_publish.py switch-account
+# 新增账号别名
+python cdp_publish.py add-account brand-a --alias "品牌A"
+
+# 首次登录或 session 过期 - 打开浏览器扫码登录指定账号
+python cdp_publish.py --account brand-a login
+
+# 重置指定账号 - 仅清除该账号 profile/cookie 并打开登录页
+python cdp_publish.py --account brand-a re-login
+
+# 切换到另一个账号别名 - 使用另一个 --account，不要清除当前账号
+python cdp_publish.py --account brand-b login
 
 # 关闭 Chrome
 python chrome_launcher.py --kill
 
 # 重启 Chrome（可选无头模式）
-python chrome_launcher.py --restart
-python chrome_launcher.py --restart --headless
+python chrome_launcher.py --account brand-a --restart
+python chrome_launcher.py --account brand-a --restart --headless
 ```
 
 ### Claude Code 集成
@@ -285,13 +294,14 @@ python chrome_launcher.py --restart --headless
 在 Claude Code 中通过 Bash 工具调用。推荐使用 pipeline 方式:
 
 1. 将中文标题和正文写入临时文本文件（UTF-8 编码）
-2. 调用 `publish_pipeline.py --headless` 传入文件路径和图片 URL
+2. 调用 `publish_pipeline.py --account <账号别名> --headless` 传入文件路径和图片 URL
 3. 根据输出状态码处理结果：
    - 未登录 → 脚本自动切换到有窗口模式，提示用户扫码
    - 已填写 → 请用户确认预览
-4. 用户确认后调用 `cdp_publish.py click-publish` 发布
+4. 用户确认后调用 `cdp_publish.py --account <账号别名> click-publish` 发布
 
 **切换账号流程**:
-1. 调用 `cdp_publish.py switch-account`
-2. 等待用户扫码确认
-3. 继续正常发布流程
+1. 确定新账号别名，例如 `brand-b`；如未配置，先 `cdp_publish.py add-account brand-b --alias "品牌B"`
+2. 调用 `cdp_publish.py --account brand-b login` 打开该账号独立 profile
+3. 等待用户扫码确认
+4. 后续发布命令都带 `--account brand-b`

@@ -6,6 +6,13 @@ description: |
   当用户想在小红书发布内容时使用——包括发笔记、发图文、发视频、上传图片、写一篇小红书、把内容发到红书上、种草笔记、好物分享等，即使用户只说"帮我发一下"但上下文明确是小红书也应触发。
 ---
 
+## 多账号约定
+
+- `publish_content`、`publish_with_video`、`check_login_status` 都支持可选 `account`。
+- 用户指定账号别名时，发布前登录检查和最终发布必须传同一个 `account`；未指定时使用 `default`。
+- `account` 只支持字母、数字、`.`、`_`、`-`，不要把小红书昵称当成别名，除非用户明确这样配置。
+- 发布预览中必须展示目标 `account`，避免发到错误账号。
+
 ## 输入判断
 
 根据用户提供的素材判断发布类型：
@@ -27,6 +34,7 @@ description: |
 ### 1. 收集发布信息
 
 确保以下内容齐全：
+- `account`（可选）— MCP 账号别名，未指定为 `default`
 - `title`（必填）— 标题
 - `content`（必填）— 正文
 - 图片列表或视频路径（必填其一）
@@ -35,10 +43,11 @@ description: |
 - `is_original`（可选，仅图文）— 声明原创
 - `visibility`（可选）— 公开可见 | 仅自己可见 | 仅互关好友可见
 
-信息不完整时，向用户询问缺少的部分。
+信息不完整时，向用户询问缺少的部分。发布前先调用 `check_login_status` 检查目标 `account` 已登录，未登录则引导使用 xhs-login 登录该账号。
 
 ### 2. 内容校验
 
+- 检查 `account` 是否只包含字母、数字、`.`、`_`、`-`
 - 检查标题长度（≤20 中文字）
 - 检查图片/视频文件路径是否为绝对路径
 - 如用户提供 URL 内容，先用 WebFetch 提取文本和图片
@@ -46,6 +55,7 @@ description: |
 ### 3. 确认发布
 
 向用户展示完整的发布内容预览：
+- 目标账号别名 `account`
 - 标题、正文、标签
 - 图片列表或视频路径
 - 定时时间、可见范围（如有）
@@ -55,6 +65,7 @@ description: |
 ### 4. 发布
 
 **图文笔记** — 调用 `publish_content`：
+- `account`（string，可选）— 账号别名，留空使用 `default`
 - `title`（string，必填）
 - `content`（string，必填）
 - `images`（string[]，必填）— 图片路径或 URL
@@ -64,6 +75,7 @@ description: |
 - `visibility`（string，可选）
 
 **视频笔记** — 调用 `publish_with_video`：
+- `account`（string，可选）— 账号别名，留空使用 `default`
 - `title`（string，必填）
 - `content`（string，必填）
 - `video`（string，必填）— 本地视频绝对路径
@@ -73,13 +85,13 @@ description: |
 
 ### 5. 报告结果
 
-发布成功后，告知用户笔记 ID 和发布状态。
+发布成功后，告知用户目标 `account`、笔记 ID 和发布状态。
 
 ## Docker MCP 发布图片路径坑
 
 当 `xiaohongshu-mcp` 通过 Docker Compose 运行时，容器默认只挂载：
 
-- `./data:/app/data`
+- `./data:/app/data`（多账号 cookies 通常落到 `/app/data/accounts/<account>/cookies.json` 或 compose 配置的 `COOKIES_DIR/<account>/cookies.json`）
 - `./images:/app/images`
 
 所以发布图文时，传给 `publish_content.images` 的本机绝对路径如果位于 `/home/bee/.hermes/tmp/...`、`/tmp/...` 等目录，容器内会看不到，日志会出现：
@@ -141,17 +153,17 @@ docker compose up -d --force-recreate
 ```
 
 4. 用 `docker inspect xiaohongshu-mcp --format '{{.Image}} {{.Created}}'` 验证容器镜像/创建时间已变化。
-5. 强制重建容器后登录态可能失效，先调用 `check_login_status`，必要时重新获取二维码登录。
+5. 强制重建容器后登录态可能失效，先对目标 `account` 调用 `check_login_status`，必要时重新获取二维码登录。
 
 ## 失败处理
 
 | 场景 | 处理 |
 |---|---|
-| 未登录 | 引导使用 xhs-login |
+| 未登录 | 引导使用 xhs-login 登录目标 `account` |
 | 标题超长 | 提示用户缩短标题 |
 | 图片路径无效 | Docker 环境优先检查图片是否在 `/app/images` 挂载路径内 |
 | 视频使用了相对路径 | 提示改为绝对路径，并确认容器可见 |
-| 发布失败 | 先查看 `docker logs --tail 120 xiaohongshu-mcp`，根据具体错误处理 |
+| 发布失败 | 先查看 `docker logs --tail 120 xiaohongshu-mcp`，确认日志里的 account/cookies 路径和具体错误 |
 
 ### Hermes 当前会话 HTTP fallback
 
@@ -188,6 +200,7 @@ payload = {
   'jsonrpc': '2.0', 'id': 8, 'method': 'tools/call', 'params': {
     'name': 'publish_content',
     'arguments': {
+      'account': 'brand-a',
       'title': '真正让女生变好看的，不只是护肤',
       'content': '正文内容，不要包含#标签',
       'images': ['/absolute/path/1.png', '/absolute/path/2.png'],

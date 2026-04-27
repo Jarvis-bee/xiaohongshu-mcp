@@ -33,3 +33,15 @@ func TestParseMCPAccountRejectsInvalidAccount(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	require.True(t, strings.Contains(result.Content[0].Text, "账号参数错误"))
 }
+
+func TestParseMCPAccountFromMapRejectsNonStringAccount(t *testing.T) {
+	account, result := parseMCPAccountFromMap(map[string]interface{}{
+		"account": 123,
+	})
+
+	require.Empty(t, account)
+	require.NotNil(t, result)
+	require.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	require.True(t, strings.Contains(result.Content[0].Text, "账号别名必须是字符串"))
+}
