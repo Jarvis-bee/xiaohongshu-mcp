@@ -146,7 +146,15 @@ func parseMCPAccount(account string) (string, *MCPToolResult) {
 }
 
 func parseMCPAccountFromMap(args map[string]interface{}) (string, *MCPToolResult) {
-	account, _ := args["account"].(string)
+	rawAccount, exists := args["account"]
+	if !exists || rawAccount == nil {
+		return parseMCPAccount("")
+	}
+
+	account, ok := rawAccount.(string)
+	if !ok {
+		return "", mcpAccountError(fmt.Errorf("账号别名必须是字符串"))
+	}
 	return parseMCPAccount(account)
 }
 
@@ -172,7 +180,11 @@ func (s *AppServer) handleCheckLoginStatus(ctx context.Context, account string) 
 	// 根据 IsLoggedIn 判断并返回友好的提示
 	var resultText string
 	if status.IsLoggedIn {
-		resultText = fmt.Sprintf("✅ 已登录\n账号: %s\n用户名: %s\n\n你可以使用其他功能了。", status.Account, status.Username)
+		if status.Username != "" {
+			resultText = fmt.Sprintf("✅ 已登录\n账号: %s\n用户名: %s\n\n你可以使用其他功能了。", status.Account, status.Username)
+		} else {
+			resultText = fmt.Sprintf("✅ 已登录\n账号: %s\n\n你可以使用其他功能了。", status.Account)
+		}
 	} else {
 		resultText = fmt.Sprintf("❌ 未登录\n账号: %s\n\n请使用 get_login_qrcode 工具获取二维码进行登录。", status.Account)
 	}
