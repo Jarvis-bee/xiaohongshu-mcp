@@ -236,24 +236,34 @@ func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context, account strin
 
 // GetLoginQrcode 获取登录的扫码二维码
 func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context, account string) (*LoginQrcodeResponse, error) {
-	b, normalizedAccount, cookiePath, err := newBrowserWithCookiePath(account)
+	normalizedAccount, err := cookies.NormalizeAccount(account)
 	if err != nil {
 		return nil, err
 	}
 	cancelPendingLoginSession(normalizedAccount)
 
+	cookiePath, err := cookies.GetCookiesFilePath(normalizedAccount)
+	if err != nil {
+		return nil, err
+	}
+
+	b := browser.NewBrowser(
+		configs.IsHeadless(),
+		browser.WithBinPath(configs.GetBinPath()),
+		browser.WithCookiesPath(cookiePath),
+	)
 	page := b.NewPage()
 
-	deferFunc := func() {
+	cleanup := sync.OnceFunc(func() {
 		_ = page.Close()
 		b.Close()
-	}
+	})
 
 	loginAction := xiaohongshu.NewLogin(page)
 
 	img, loggedIn, err := loginAction.FetchQrcodeImage(ctx)
 	if err != nil || loggedIn {
-		defer deferFunc()
+		cleanup()
 	}
 	if err != nil {
 		return nil, err
@@ -265,7 +275,7 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context, account string)
 		ctxTimeout, session := beginPendingLoginSession(normalizedAccount, timeout)
 		go func() {
 			defer finishPendingLoginSession(normalizedAccount, session)
-			defer deferFunc()
+			defer cleanup()
 
 			logrus.Info("WaitForLogin: starting goroutine")
 			if loginAction.WaitForLogin(ctxTimeout) {
